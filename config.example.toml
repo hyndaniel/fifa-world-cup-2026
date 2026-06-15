@@ -14,6 +14,10 @@ gamma_base = "https://gamma-api.polymarket.com"
 [zucai]
 api = "https://webapi.sporttery.cn/gateway/jc/football/getMatchCalculatorV1.qry"
 ua = "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) Mobile/15E148"
+# 足彩被 EdgeOne WAF 按 IP 拦(数据中心IP中招)。海外机房部署时配住宅出口代理过墙。
+# 空="直连(适合住宅IP)"; 部署到 AWS 等机房需填本地 SOCKS5(xray→住宅节点), 例:
+# proxy = "socks5://127.0.0.1:10808"
+proxy = ""
 
 [value]
 devig_yellow_below = 1.03   # 去水 value < 此值标 yellow

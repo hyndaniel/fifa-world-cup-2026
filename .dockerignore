@@ -1,0 +1,11 @@
+.git/
+__pycache__/
+*.pyc
+.pytest_cache/
+tests/
+docs/
+prototype/
+.venv/
+venv/
+data/*.db
+config.toml

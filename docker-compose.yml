@@ -1,0 +1,11 @@
+services:
+  app:
+    build: .
+    image: wc-value-dashboard:latest
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data            # SQLite 持久化
+      - ./reports:/app/reports      # 预测/报告 markdown (单一源, 平台 serve)
+      - ./config.toml:/app/config.toml:ro   # 部署前 cp config.example.toml config.toml 并编辑
+    restart: unless-stopped

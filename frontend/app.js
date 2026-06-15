@@ -1,0 +1,492 @@
+/* WC 价值看板 前端逻辑
+ * 契约 (见计划 /state JSON 与 API):
+ *   GET  /api/state                 -> {ts, next_cutoff, value_radar[], watchlist[], ledger{A,B}, matches_today[]}
+ *   GET  /api/reports               -> [{name, title}, ...]   (容错: 也支持 [string,...])
+ *   GET  /api/reports/{name}        -> markdown 文本
+ *   POST /api/bets        body: {wallet, legs, stake, odds, note}
+ *   POST /api/watchlist   body: {kind, key, note}
+ *   DELETE /api/watchlist/{id}      (容错: 也支持 ?id= )
+ */
+"use strict";
+
+const POLL_INTERVAL_MS = 30_000; // 每 N 秒拉一次 /state
+
+// ---------- 小工具 ----------
+const $ = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+function esc(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function fmtNum(v, digits = 2) {
+  if (v == null || Number.isNaN(Number(v))) return "—";
+  return Number(v).toFixed(digits);
+}
+
+function fmtPct(v, digits = 1) {
+  if (v == null || Number.isNaN(Number(v))) return "—";
+  return Number(v).toFixed(digits) + "%";
+}
+
+function fmtSignedPct(v, digits = 1) {
+  if (v == null || Number.isNaN(Number(v))) return "—";
+  const n = Number(v);
+  return (n >= 0 ? "+" : "") + n.toFixed(digits) + "%";
+}
+
+function fmtHMS(totalSec) {
+  let s = Math.max(0, Math.floor(totalSec));
+  const h = Math.floor(s / 3600);
+  s -= h * 3600;
+  const m = Math.floor(s / 60);
+  s -= m * 60;
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(h)}:${pad(m)}:${pad(s)}`;
+}
+
+async function apiGet(path) {
+  const r = await fetch(path, { headers: { Accept: "application/json" } });
+  if (!r.ok) throw new Error(`${path} -> ${r.status}`);
+  const ct = r.headers.get("content-type") || "";
+  return ct.includes("application/json") ? r.json() : r.text();
+}
+
+async function apiSend(path, method, body) {
+  const r = await fetch(path, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: body == null ? undefined : JSON.stringify(body),
+  });
+  if (!r.ok) {
+    let detail = "";
+    try {
+      detail = JSON.stringify(await r.json());
+    } catch (_) {
+      /* ignore */
+    }
+    throw new Error(`${method} ${path} -> ${r.status} ${detail}`);
+  }
+  const ct = r.headers.get("content-type") || "";
+  return ct.includes("application/json") ? r.json() : r.text();
+}
+
+// ---------- 全局状态 ----------
+const state = {
+  lastState: null,
+  cutoffDeadlineMs: null, // 倒计时本地基准 (绝对时间戳)
+  cdTimer: null,
+  pollTimer: null,
+  activeReport: null,
+};
+
+// ================= 倒计时 (本地 tick) =================
+function setCutoff(nextCutoff) {
+  const matchEl = $("#cd-match");
+  const cutoffEl = $("#cd-cutoff");
+  if (!nextCutoff || nextCutoff.countdown_sec == null) {
+    state.cutoffDeadlineMs = null;
+    matchEl.textContent = "今日无待停售场次";
+    cutoffEl.textContent = "";
+    $("#cd-timer").textContent = "--:--:--";
+    return;
+  }
+  // 用服务端给的剩余秒数作为基准, 之后本地每秒递减
+  state.cutoffDeadlineMs = Date.now() + Number(nextCutoff.countdown_sec) * 1000;
+  matchEl.textContent = nextCutoff.match || "—";
+  cutoffEl.textContent = nextCutoff.cutoff_bj ? `停售 ${nextCutoff.cutoff_bj}` : "";
+  tickCountdown();
+}
+
+function tickCountdown() {
+  const timerEl = $("#cd-timer");
+  if (state.cutoffDeadlineMs == null) {
+    timerEl.textContent = "--:--:--";
+    return;
+  }
+  const remainSec = (state.cutoffDeadlineMs - Date.now()) / 1000;
+  timerEl.textContent = fmtHMS(remainSec);
+  const cd = $("#countdown");
+  cd.classList.toggle("urgent", remainSec > 0 && remainSec <= 600); // <=10min 高亮
+  cd.classList.toggle("closed", remainSec <= 0);
+  if (remainSec <= 0) timerEl.textContent = "已停售";
+}
+
+// ================= 价值雷达 =================
+function flagBadge(flag) {
+  if (flag === "green") return { dot: "🟢", label: "真 +EV", cls: "flag-green" };
+  if (flag === "yellow") return { dot: "🟡", label: "接近公允", cls: "flag-yellow" };
+  return { dot: "⚪", label: "跳过", cls: "flag-skip" };
+}
+
+function renderRadar(rows) {
+  const list = $("#radar-list");
+  list.innerHTML = "";
+  if (!rows || rows.length === 0) {
+    list.appendChild(el("div", "empty", "暂无可投价值点"));
+    return;
+  }
+  for (const r of rows) {
+    const b = flagBadge(r.flag);
+    const item = el("div", `radar-item ${b.cls}`);
+
+    const row = el("div", "radar-row");
+    const left = el("div", "ri-left");
+    left.appendChild(el("div", "ri-match", r.match || "—"));
+    const sub = el("div", "ri-sub");
+    sub.textContent = `${r.ko_bj || ""} · ${r.market || ""} ${r.outcome || ""}`;
+    left.appendChild(sub);
+    row.appendChild(left);
+
+    row.appendChild(el("div", "ri-odds", fmtNum(r.zucai_odds)));
+    row.appendChild(el("div", "ri-val ri-raw", fmtNum(r.value_raw != null ? r.value_raw : r.poly_prob_raw && r.zucai_odds ? (r.zucai_odds * r.poly_prob_raw) / 100 : null, 3)));
+    row.appendChild(el("div", "ri-val ri-devig", fmtNum(r.value_devig != null ? r.value_devig : r.poly_prob_devig && r.zucai_odds ? (r.zucai_odds * r.poly_prob_devig) / 100 : null, 3)));
+
+    const badge = el("div", `ri-badge ${b.cls}`);
+    badge.textContent = `${b.dot} ${b.label}`;
+    row.appendChild(badge);
+
+    item.appendChild(row);
+
+    // 点开详情
+    const detail = el("div", "radar-detail");
+    detail.hidden = true;
+    detail.innerHTML = `
+      <div class="rd-grid">
+        <div><span class="k">Poly 生概率</span><span class="v">${esc(fmtPct(r.poly_prob_raw))}</span></div>
+        <div><span class="k">Poly 去水概率</span><span class="v">${esc(fmtPct(r.poly_prob_devig))}</span></div>
+        <div><span class="k">EV 生</span><span class="v">${esc(fmtSignedPct(r.ev_pct_raw))}</span></div>
+        <div><span class="k">EV 去水</span><span class="v">${esc(fmtSignedPct(r.ev_pct_devig != null ? r.ev_pct_devig : r.ev_pct))}</span></div>
+        <div><span class="k">停售</span><span class="v">${esc(r.cutoff_bj || "—")}</span></div>
+        <div><span class="k">建议</span><span class="v">${r.flag === "yellow" ? "薄边, 噪声内, 谨慎" : "单关小注"}</span></div>
+      </div>
+    `;
+    item.appendChild(detail);
+
+    row.addEventListener("click", () => {
+      detail.hidden = !detail.hidden;
+      item.classList.toggle("open", !detail.hidden);
+    });
+
+    list.appendChild(item);
+  }
+}
+
+// ================= 特别关注 =================
+function renderWatchlist(items) {
+  const wrap = $("#watch-list");
+  wrap.innerHTML = "";
+  if (!items || items.length === 0) {
+    wrap.appendChild(el("div", "empty", "暂无关注项, 在上方添加"));
+    return;
+  }
+  const kindLabel = { team: "队", match: "场", player: "人" };
+  for (const w of items) {
+    const card = el("div", "watch-card");
+
+    const head = el("div", "wc-head");
+    const tag = el("span", `wc-kind kind-${w.kind || "x"}`, kindLabel[w.kind] || w.kind || "?");
+    head.appendChild(tag);
+    head.appendChild(el("span", "wc-key", w.key || "—"));
+    if (w.id != null) {
+      const del = el("button", "wc-del", "✕");
+      del.title = "取消关注";
+      del.addEventListener("click", () => unpin(w.id));
+      head.appendChild(del);
+    }
+    card.appendChild(head);
+
+    if (w.note) card.appendChild(el("div", "wc-note", w.note));
+
+    // 关联场次 + 价值点
+    if (Array.isArray(w.matches) && w.matches.length) {
+      const ml = el("div", "wc-matches");
+      for (const m of w.matches) {
+        const line = typeof m === "string" ? m : `${m.match || ""} ${m.ko_bj || ""}`.trim();
+        ml.appendChild(el("div", "wc-match-line", line));
+      }
+      card.appendChild(ml);
+    }
+
+    // 首发 (v1 多为空占位)
+    if (w.lineup) {
+      const lu = el("div", "wc-lineup");
+      lu.appendChild(el("div", "wc-lineup-h", "首发"));
+      lu.appendChild(el("div", "wc-lineup-body", typeof w.lineup === "string" ? w.lineup : JSON.stringify(w.lineup)));
+      card.appendChild(lu);
+    } else {
+      card.appendChild(el("div", "wc-lineup-pending", "首发未出炉"));
+    }
+
+    // 新闻链接 (可点, 新窗口)
+    if (Array.isArray(w.news) && w.news.length) {
+      const nl = el("div", "wc-news");
+      for (const n of w.news) {
+        const url = typeof n === "string" ? n : n.url;
+        const title = typeof n === "string" ? n : n.title || n.url;
+        if (!url) continue;
+        const a = el("a", "wc-news-link");
+        a.href = url;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        a.textContent = "🔗 " + title;
+        nl.appendChild(a);
+      }
+      card.appendChild(nl);
+    }
+
+    wrap.appendChild(card);
+  }
+}
+
+async function pin(kind, key, note = "") {
+  await apiSend("/api/watchlist", "POST", { kind, key, note });
+  await refreshState();
+}
+
+async function unpin(id) {
+  // 主路径: RESTful /api/watchlist/{id}; 失败回退到 query 形式
+  try {
+    await apiSend(`/api/watchlist/${encodeURIComponent(id)}`, "DELETE");
+  } catch (_) {
+    await apiSend(`/api/watchlist?id=${encodeURIComponent(id)}`, "DELETE");
+  }
+  await refreshState();
+}
+
+// ================= 账本 =================
+function renderLedger(ledger) {
+  const a = (ledger && ledger.A) || { stake: 0, pnl: 0, roi: 0, n: 0 };
+  const b = (ledger && ledger.B) || { budget: 0, spent: 0, pnl: 0, n: 0 };
+
+  const aRows = $("#wallet-a-rows");
+  aRows.innerHTML = "";
+  aRows.appendChild(ledgerRow("下注数", a.n));
+  aRows.appendChild(ledgerRow("累计注码", fmtNum(a.stake)));
+  aRows.appendChild(ledgerRow("盈亏", fmtNum(a.pnl), a.pnl));
+  aRows.appendChild(ledgerRow("ROI", fmtSignedPct((a.roi || 0) * 100), a.roi));
+
+  const bRows = $("#wallet-b-rows");
+  bRows.innerHTML = "";
+  bRows.appendChild(ledgerRow("下注数", b.n));
+  bRows.appendChild(ledgerRow("周预算", fmtNum(b.budget)));
+  bRows.appendChild(ledgerRow("已花", fmtNum(b.spent)));
+  const remain = (Number(b.budget) || 0) - (Number(b.spent) || 0);
+  bRows.appendChild(ledgerRow("剩余", fmtNum(remain), remain));
+  bRows.appendChild(ledgerRow("盈亏", fmtNum(b.pnl), b.pnl));
+}
+
+function ledgerRow(k, v, signFor) {
+  const row = el("div", "led-row");
+  row.appendChild(el("span", "led-k", k));
+  const vEl = el("span", "led-v", String(v));
+  if (signFor != null && !Number.isNaN(Number(signFor))) {
+    const n = Number(signFor);
+    if (n > 0) vEl.classList.add("pos");
+    else if (n < 0) vEl.classList.add("neg");
+  }
+  row.appendChild(vEl);
+  return row;
+}
+
+// 记账表单
+function setupBetForm() {
+  const form = $("#bet-form");
+  const openBtn = $("#open-bet-form");
+  const cancelBtn = $("#cancel-bet");
+  const msg = $("#bet-msg");
+
+  openBtn.addEventListener("click", () => {
+    form.hidden = !form.hidden;
+  });
+  cancelBtn.addEventListener("click", () => {
+    form.hidden = true;
+    msg.textContent = "";
+  });
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    msg.textContent = "";
+    const wallet = $("#bet-wallet").value;
+    const stake = parseFloat($("#bet-stake").value);
+    const odds = parseFloat($("#bet-odds").value);
+    const legsText = $("#bet-legs").value.trim();
+    const note = $("#bet-note").value.trim();
+
+    if (!(stake > 0) || !(odds >= 1)) {
+      msg.textContent = "注码需 >0, 赔率需 >=1";
+      msg.className = "bet-msg err";
+      return;
+    }
+    const legs = legsText
+      ? legsText.split(",").map((s) => ({ desc: s.trim() })).filter((l) => l.desc)
+      : [];
+    try {
+      await apiSend("/api/bets", "POST", { wallet, legs, stake, odds, note });
+      msg.textContent = "已记账";
+      msg.className = "bet-msg ok";
+      form.reset();
+      await refreshState();
+      setTimeout(() => {
+        form.hidden = true;
+        msg.textContent = "";
+      }, 800);
+    } catch (err) {
+      msg.textContent = "失败: " + err.message;
+      msg.className = "bet-msg err";
+    }
+  });
+}
+
+// ================= 报告 tab =================
+let md = null;
+function getMd() {
+  if (md) return md;
+  if (window.markdownit) {
+    md = window.markdownit({ html: false, linkify: true, breaks: true });
+  }
+  return md;
+}
+
+function reportName(r) {
+  return typeof r === "string" ? r : r.name;
+}
+function reportTitle(r) {
+  if (typeof r === "string") return r;
+  return r.title || r.name;
+}
+
+async function loadReportsList() {
+  const tabsEl = $("#report-tabs");
+  try {
+    const list = await apiGet("/api/reports");
+    tabsEl.innerHTML = "";
+    if (!Array.isArray(list) || list.length === 0) {
+      tabsEl.appendChild(el("div", "empty", "暂无报告"));
+      return;
+    }
+    list.forEach((r, i) => {
+      const name = reportName(r);
+      const btn = el("button", "report-tab", reportTitle(r));
+      btn.dataset.name = name;
+      btn.addEventListener("click", () => openReport(name));
+      tabsEl.appendChild(btn);
+    });
+    // 默认打开第一篇 (或之前选中的)
+    const target = state.activeReport || reportName(list[0]);
+    openReport(target);
+  } catch (err) {
+    tabsEl.innerHTML = "";
+    tabsEl.appendChild(el("div", "empty", "报告列表加载失败: " + err.message));
+  }
+}
+
+async function openReport(name) {
+  state.activeReport = name;
+  $$(".report-tab").forEach((b) => b.classList.toggle("active", b.dataset.name === name));
+  const body = $("#report-body");
+  body.innerHTML = '<div class="empty">加载中…</div>';
+  try {
+    const text = await apiGet(`/api/reports/${encodeURIComponent(name)}`);
+    const mdText = typeof text === "string" ? text : text.content || text.markdown || "";
+    const renderer = getMd();
+    if (renderer) {
+      body.innerHTML = renderer.render(mdText);
+    } else {
+      // markdown-it 未就绪: 退化为纯文本
+      body.innerHTML = "";
+      const pre = el("pre", "report-raw");
+      pre.textContent = mdText;
+      body.appendChild(pre);
+    }
+  } catch (err) {
+    body.innerHTML = "";
+    body.appendChild(el("div", "empty", "报告加载失败: " + err.message));
+  }
+}
+
+// ================= tab 切换 =================
+function setupTabs() {
+  $$(".tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const tab = btn.dataset.tab;
+      $$(".tab-btn").forEach((b) => b.classList.toggle("active", b === btn));
+      $$(".view").forEach((v) => v.classList.remove("active"));
+      const view = $(`#view-${tab}`);
+      if (view) view.classList.add("active");
+      if (tab === "reports") loadReportsList();
+    });
+  });
+}
+
+function setupWatchAdd() {
+  $("#watch-add").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const kind = $("#watch-kind").value;
+    const key = $("#watch-key").value.trim();
+    if (!key) return;
+    try {
+      await pin(kind, key, "");
+      $("#watch-key").value = "";
+    } catch (err) {
+      alert("关注失败: " + err.message);
+    }
+  });
+}
+
+// ================= /state 轮询 =================
+function setConn(ok) {
+  const dot = $("#conn-dot");
+  dot.classList.toggle("ok", ok);
+  dot.classList.toggle("bad", !ok);
+}
+
+async function refreshState() {
+  try {
+    const s = await apiGet("/api/state");
+    state.lastState = s;
+    setConn(true);
+
+    setCutoff(s.next_cutoff);
+    renderRadar(s.value_radar || []);
+    renderWatchlist(s.watchlist || []);
+    renderLedger(s.ledger || {});
+
+    const upd = $("#updated-at");
+    upd.textContent = "刷新 " + (s.ts ? s.ts.replace("T", " ").slice(0, 19) : new Date().toLocaleTimeString());
+  } catch (err) {
+    setConn(false);
+    $("#updated-at").textContent = "离线: " + err.message;
+  }
+}
+
+// ================= 启动 =================
+function init() {
+  setupTabs();
+  setupWatchAdd();
+  setupBetForm();
+
+  // 倒计时本地每秒 tick (与服务端轮询解耦)
+  state.cdTimer = setInterval(tickCountdown, 1000);
+
+  refreshState();
+  state.pollTimer = setInterval(refreshState, POLL_INTERVAL_MS);
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", init);
+} else {
+  init();
+}
