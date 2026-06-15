@@ -1,0 +1,290 @@
+[
+ {
+  "slug": "fifwc-mex-kr-2026-06-18",
+  "title": "Mexico vs. Korea Republic"
+ },
+ {
+  "slug": "fifwc-eng-hrv-2026-06-17",
+  "title": "England vs. Croatia"
+ },
+ {
+  "slug": "fifwc-eng-gha-2026-06-23",
+  "title": "England vs. Ghana"
+ },
+ {
+  "slug": "fifwc-che-bih-2026-06-18",
+  "title": "Switzerland vs. Bosnia-Herzegovina"
+ },
+ {
+  "slug": "fifwc-gha-pan-2026-06-17",
+  "title": "Ghana vs. Panama"
+ },
+ {
+  "slug": "fifwc-jpn-swe-2026-06-25",
+  "title": "Japan vs. Sweden"
+ },
+ {
+  "slug": "fifwc-tur-par-2026-06-19",
+  "title": "Türkiye vs. Paraguay"
+ },
+ {
+  "slug": "fifwc-esp-cvi-2026-06-15",
+  "title": "Spain vs. Cabo Verde"
+ },
+ {
+  "slug": "fifwc-sco-mar-2026-06-19",
+  "title": "Scotland vs. Morocco"
+ },
+ {
+  "slug": "fifwc-usa-aus-2026-06-19",
+  "title": "United States vs. Australia"
+ },
+ {
+  "slug": "fifwc-ger-civ-2026-06-20",
+  "title": "Germany vs. Côte d'Ivoire"
+ },
+ {
+  "slug": "fifwc-prt-cdr-2026-06-17",
+  "title": "Portugal vs. DR Congo"
+ },
+ {
+  "slug": "fifwc-fra-sen-2026-06-16",
+  "title": "France vs. Senegal"
+ },
+ {
+  "slug": "fifwc-col-cdr-2026-06-23",
+  "title": "Colombia vs. DR Congo"
+ },
+ {
+  "slug": "fifwc-tur-usa-2026-06-25",
+  "title": "Türkiye vs. United States"
+ },
+ {
+  "slug": "fifwc-jor-arg-2026-06-27",
+  "title": "Jordan vs. Argentina"
+ },
+ {
+  "slug": "fifwc-bel-egy-2026-06-15",
+  "title": "Belgium vs. Egypt"
+ },
+ {
+  "slug": "fifwc-bra-hai-2026-06-19",
+  "title": "Brazil vs. Haiti"
+ },
+ {
+  "slug": "fifwc-cze-mex-2026-06-24",
+  "title": "Czechia vs. Mexico"
+ },
+ {
+  "slug": "fifwc-col-prt-2026-06-27",
+  "title": "Colombia vs. Portugal"
+ },
+ {
+  "slug": "fifwc-bel-irn-2026-06-21",
+  "title": "Belgium vs. IR Iran"
+ },
+ {
+  "slug": "fifwc-nor-sen-2026-06-22",
+  "title": "Norway vs. Senegal"
+ },
+ {
+  "slug": "fifwc-ecu-kor-2026-06-20",
+  "title": "Ecuador vs. Curaçao"
+ },
+ {
+  "slug": "fifwc-jor-alg-2026-06-22",
+  "title": "Jordan vs. Algeria"
+ },
+ {
+  "slug": "fifwc-ury-esp-2026-06-26",
+  "title": "Uruguay vs. Spain"
+ },
+ {
+  "slug": "fifwc-irn-nzl-2026-06-15",
+  "title": "IR Iran vs. New Zealand"
+ },
+ {
+  "slug": "fifwc-arg-alg-2026-06-16",
+  "title": "Argentina vs. Algeria"
+ },
+ {
+  "slug": "fifwc-par-aus-2026-06-25",
+  "title": "Paraguay vs. Australia"
+ },
+ {
+  "slug": "fifwc-fra-irq-2026-06-22",
+  "title": "France vs. Iraq"
+ },
+ {
+  "slug": "fifwc-pan-hrv-2026-06-23",
+  "title": "Panama vs. Croatia"
+ },
+ {
+  "slug": "fifwc-hrv-gha-2026-06-27",
+  "title": "Croatia vs. Ghana"
+ },
+ {
+  "slug": "fifwc-rsa-kr-2026-06-24",
+  "title": "South Africa vs. Korea Republic"
+ },
+ {
+  "slug": "fifwc-cdr-uzb-2026-06-27",
+  "title": "DR Congo vs. Uzbekistan"
+ },
+ {
+  "slug": "fifwc-cze-rsa-2026-06-18",
+  "title": "Czechia vs. South Africa"
+ },
+ {
+  "slug": "fifwc-nor-fra-2026-06-26",
+  "title": "Norway vs. France"
+ },
+ {
+  "slug": "fifwc-che-can-2026-06-24",
+  "title": "Switzerland vs. Canada"
+ },
+ {
+  "slug": "fifwc-sco-bra-2026-06-24",
+  "title": "Scotland vs. Brazil"
+ },
+ {
+  "slug": "fifwc-can-qat-2026-06-18",
+  "title": "Canada vs. Qatar"
+ },
+ {
+  "slug": "fifwc-tun-jpn-2026-06-21",
+  "title": "Tunisia vs. Japan"
+ },
+ {
+  "slug": "fifwc-ksa-ury-2026-06-15",
+  "title": "Saudi Arabia vs. Uruguay"
+ },
+ {
+  "slug": "fifwc-irq-nor-2026-06-16",
+  "title": "Iraq vs. Norway"
+ },
+ {
+  "slug": "fifwc-uzb-col-2026-06-17",
+  "title": "Uzbekistan vs. Colombia"
+ },
+ {
+  "slug": "fifwc-pan-eng-2026-06-27",
+  "title": "Panama vs. England"
+ },
+ {
+  "slug": "fifwc-bih-qat-2026-06-24",
+  "title": "Bosnia-Herzegovina vs. Qatar"
+ },
+ {
+  "slug": "fifwc-aut-jor-2026-06-17",
+  "title": "Austria vs. Jordan"
+ },
+ {
+  "slug": "fifwc-sen-irq-2026-06-26",
+  "title": "Senegal vs. Iraq"
+ },
+ {
+  "slug": "fifwc-nld-swe-2026-06-20",
+  "title": "Netherlands vs. Sweden"
+ },
+ {
+  "slug": "fifwc-nzl-bel-2026-06-26",
+  "title": "New Zealand vs. Belgium"
+ },
+ {
+  "slug": "fifwc-alg-aut-2026-06-27",
+  "title": "Algeria vs. Austria"
+ },
+ {
+  "slug": "fifwc-kor-civ-2026-06-25",
+  "title": "Curaçao vs. Côte d'Ivoire"
+ },
+ {
+  "slug": "fifwc-nzl-egy-2026-06-21",
+  "title": "New Zealand vs. Egypt"
+ },
+ {
+  "slug": "fifwc-ecu-ger-2026-06-25",
+  "title": "Ecuador vs. Germany"
+ },
+ {
+  "slug": "fifwc-cvi-ksa-2026-06-26",
+  "title": "Cabo Verde vs. Saudi Arabia"
+ },
+ {
+  "slug": "fifwc-tun-nld-2026-06-25",
+  "title": "Tunisia vs. Netherlands"
+ },
+ {
+  "slug": "fifwc-arg-aut-2026-06-22",
+  "title": "Argentina vs. Austria"
+ },
+ {
+  "slug": "fifwc-prt-uzb-2026-06-23",
+  "title": "Portugal vs. Uzbekistan"
+ },
+ {
+  "slug": "fifwc-egy-irn-2026-06-26",
+  "title": "Egypt vs. IR Iran"
+ },
+ {
+  "slug": "fifwc-mar-hai-2026-06-24",
+  "title": "Morocco vs. Haiti"
+ },
+ {
+  "slug": "fifwc-esp-ksa-2026-06-21",
+  "title": "Spain vs. Saudi Arabia"
+ },
+ {
+  "slug": "fifwc-ury-cvi-2026-06-21",
+  "title": "Uruguay vs. Cabo Verde"
+ },
+ {
+  "slug": "fifwc-fra-sen-2026-06-16-halftime-result",
+  "title": "France vs. Senegal - Halftime Result"
+ },
+ {
+  "slug": "fifwc-ksa-ury-2026-06-15-halftime-result",
+  "title": "Saudi Arabia vs. Uruguay - Halftime Result"
+ },
+ {
+  "slug": "fifwc-esp-ksa-2026-06-21-halftime-result",
+  "title": "Spain vs. Saudi Arabia - Halftime Result"
+ },
+ {
+  "slug": "fifwc-prt-cdr-2026-06-17-exact-score",
+  "title": "Portugal vs. DR Congo - Exact Score"
+ },
+ {
+  "slug": "fifwc-bel-egy-2026-06-15-halftime-result",
+  "title": "Belgium vs. Egypt - Halftime Result"
+ },
+ {
+  "slug": "fifwc-esp-cvi-2026-06-15-exact-score",
+  "title": "Spain vs. Cabo Verde - Exact Score"
+ },
+ {
+  "slug": "fifwc-fra-irq-2026-06-22-exact-score",
+  "title": "France vs. Iraq - Exact Score"
+ },
+ {
+  "slug": "fifwc-irq-nor-2026-06-16-halftime-result",
+  "title": "Iraq vs. Norway - Halftime Result"
+ },
+ {
+  "slug": "fifwc-ecu-kor-2026-06-20-halftime-result",
+  "title": "Ecuador vs. Curaçao - Halftime Result"
+ },
+ {
+  "slug": "fifwc-esp-cvi-2026-06-15-halftime-result",
+  "title": "Spain vs. Cabo Verde - Halftime Result"
+ },
+ {
+  "slug": "fifwc-nzl-egy-2026-06-21-halftime-result",
+  "title": "New Zealand vs. Egypt - Halftime Result"
+ },
+ {
+  "slug": "fifwc-cvi-ksa-2026-06-26-exact-score",
+  "title": "Cabo Verde vs. Saudi Arabia - Exact Score"
+ }
+]
