@@ -2,8 +2,9 @@ services:
   app:
     build: .
     image: wc-value-dashboard:latest
-    ports:
-      - "8000:8000"
+    # host 网络: 容器直接用宿主机回环, 足彩 proxy 可走 socks5://127.0.0.1:10808 (宿主 xray)。
+    # 同时 app 直接在宿主 0.0.0.0:8000 暴露 (无需 ports 映射)。
+    network_mode: host
     volumes:
       - ./data:/app/data            # SQLite 持久化
       - ./reports:/app/reports      # 预测/报告 markdown (单一源, 平台 serve)
