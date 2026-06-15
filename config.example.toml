@@ -1,0 +1,23 @@
+[server]
+host = "0.0.0.0"
+port = 8000
+password = "change-me"
+
+[poll]
+interval_sec = 180
+zucai_pools = "had,hhad,ttg"
+
+[poly]
+tag_id = "102232"
+gamma_base = "https://gamma-api.polymarket.com"
+
+[zucai]
+api = "https://webapi.sporttery.cn/gateway/jc/football/getMatchCalculatorV1.qry"
+ua = "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) Mobile/15E148"
+
+[value]
+devig_yellow_below = 1.03   # 去水 value < 此值标 yellow
+
+[wallet]
+A_unit_pct = 1.5
+B_weekly_budget = 100
