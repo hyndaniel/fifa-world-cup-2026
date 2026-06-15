@@ -11,12 +11,15 @@
 """
 import json
 import re
-import urllib.request
+
+import httpx
 
 from .models import PolyProbs
 
 GAMMA = "https://gamma-api.polymarket.com"
 WC_TAG = "102232"  # FIFA World Cup tag
+# gamma 走 Cloudflare, 默认 Python-urllib UA 会 403; 用浏览器 UA + httpx(自带 certifi)。
+_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15"
 
 
 def _default_fetcher(path: str) -> list:
@@ -25,11 +28,11 @@ def _default_fetcher(path: str) -> list:
     生产环境(HK VPS 直连)无需代理。需走代理时由调用方注入自定义 fetcher。
     """
     url = GAMMA + path
-    req = urllib.request.Request(url, headers={"Accept": "application/json"})
     try:
-        with urllib.request.urlopen(req, timeout=30) as r:
-            out = r.read().decode("utf-8")
-        return json.loads(out) if out.strip() else []
+        r = httpx.get(url, headers={"Accept": "application/json", "User-Agent": _UA},
+                      timeout=30, follow_redirects=True)
+        r.raise_for_status()
+        return r.json()
     except Exception:
         return []
 
