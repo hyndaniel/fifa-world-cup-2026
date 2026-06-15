@@ -27,13 +27,17 @@ def list_reports(reports_dir="reports"):
     for p in sorted(base.glob("*.md")):
         if not p.is_file():
             continue
+        # 跳过点文件 (macOS AppleDouble "._*" 等隐藏文件, 非真报告且常非 UTF-8)
+        if p.name.startswith("."):
+            continue
         name = p.stem
         title = name
         try:
             t = _first_h1(p.read_text(encoding="utf-8"))
             if t:
                 title = t
-        except OSError:
+        except (OSError, UnicodeDecodeError):
+            # 坏编码不应拖垮整个列表接口, 回退到文件名当标题
             pass
         out.append({"name": name, "title": title})
     return out
