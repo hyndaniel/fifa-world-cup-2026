@@ -123,9 +123,14 @@ class Db:
 
     # ---------- value points ----------
     def save_value_points(self, match_id, points):
-        """points: iterable of ValuePoint (dataclass) 或 dict。"""
+        """points: iterable of ValuePoint (dataclass) 或 dict。
+
+        替换语义: 先删该场旧 value_points 再插新批, 保证只保留最新一轮
+        (历史盘口在 odds_snapshots; value_points 只反映当前态, 避免累积/陈旧 flag)。
+        """
         ts = _now_bj()
         with self._conn() as conn:
+            conn.execute("DELETE FROM value_points WHERE match_id=?", (match_id,))
             for p in points:
                 d = p if isinstance(p, dict) else p.__dict__
                 conn.execute(
