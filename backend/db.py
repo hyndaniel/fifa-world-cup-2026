@@ -90,7 +90,7 @@ class Db:
     def upsert_match(self, zucai_num, home_cn, away_cn, home_en, away_en,
                      poly_slug, ko_bj, cutoff_bj, status="Selling"):
         with self._conn() as conn:
-            cur = conn.execute(
+            conn.execute(
                 """INSERT INTO matches
                    (zucai_num, home_cn, away_cn, home_en, away_en, poly_slug, ko_bj, cutoff_bj, status)
                    VALUES (?,?,?,?,?,?,?,?,?)
@@ -102,11 +102,12 @@ class Db:
                 (zucai_num, home_cn, away_cn, home_en, away_en, poly_slug,
                  ko_bj, cutoff_bj, status),
             )
-            if cur.lastrowid:
-                row = conn.execute(
-                    "SELECT id FROM matches WHERE zucai_num=?", (zucai_num,)
-                ).fetchone()
-                return row["id"]
+            # 总是查 id: INSERT 时 lastrowid 有效, 但 ON CONFLICT→UPDATE 时
+            # lastrowid 为 0/假, 不能据此判断; upsert 后该 zucai_num 必存在。
+            row = conn.execute(
+                "SELECT id FROM matches WHERE zucai_num=?", (zucai_num,)
+            ).fetchone()
+            return row["id"] if row else None
 
     def matches(self):
         with self._conn() as conn:
