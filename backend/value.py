@@ -153,7 +153,7 @@ def _flag(value_devig, yellow_below):
         return "green"
     if value_devig >= YELLOW_AT:
         return "yellow"
-    return "yellow"  # 低于 0.97 仍展示为 yellow(下界), skip 由调用处单独标
+    return "red"  # 低于 0.97 = 明显 -EV, 不进雷达; skip 由调用处单独标
 
 
 def compute_value(z: ZucaiMatch, p: PolyProbs, yellow_below=1.03) -> list[ValuePoint]:
@@ -180,10 +180,12 @@ def compute_value(z: ZucaiMatch, p: PolyProbs, yellow_below=1.03) -> list[ValueP
         ev_pct = round((value_devig - 1) * 100, 1)
         if skip:
             flag = "skip"
-        elif value_devig >= yellow_below:
+        elif value_devig >= yellow_below:   # >=1.03 真+EV
             flag = "green"
-        else:
+        elif value_devig >= YELLOW_AT:      # 0.97~1.03 接近公允
             flag = "yellow"
+        else:                               # <0.97 明显-EV, 不进雷达
+            flag = "red"
         pts.append(ValuePoint(
             market=market, outcome=outcome, zucai_odds=odds,
             poly_prob_raw=round(raw, 1), poly_prob_devig=round(dv, 1),
