@@ -117,6 +117,24 @@ def test_watchlist_get_post_delete(client):
     assert len(c.get("/api/watchlist").json()) == 1
 
 
+def test_ingest_zucai_accepts_and_counts(client, monkeypatch):
+    c, _ = client
+    # 拦掉后台 poll_once(避免真连 Polymarket), 只验证接口受理 + 计数
+    import backend.poller as poller_mod
+    seen = []
+    monkeypatch.setattr(poller_mod, "poll_once",
+                        lambda db, cfg, **kw: (seen.append(kw), 0)[1])
+    payload = {"value": {"matchInfoList": [
+        {"subMatchList": [{"matchNumStr": "周一013"}, {"matchNumStr": "周一014"}]},
+        {"subMatchList": [{"matchNumStr": "周二017"}]},
+    ]}}
+    r = c.post("/api/ingest/zucai", json=payload)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["accepted"] is True
+    assert body["matches"] == 3  # 2 + 1
+
+
 def test_auth_enforced_when_password_set(tmp_path):
     db_path = tmp_path / "auth.db"
     db = Db(str(db_path))

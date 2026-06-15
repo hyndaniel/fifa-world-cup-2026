@@ -8,7 +8,7 @@ except ModuleNotFoundError:  # pragma: no cover
 
 DEFAULTS = {
     "server": {"host": "0.0.0.0", "port": 8000, "password": "change-me"},
-    "poll": {"interval_sec": 180, "zucai_pools": "had,hhad,ttg"},
+    "poll": {"interval_sec": 180, "zucai_pools": "had,hhad,ttg", "mode": "direct"},
     "poly": {"tag_id": "102232", "gamma_base": "https://gamma-api.polymarket.com"},
     "zucai": {
         "api": "https://webapi.sporttery.cn/gateway/jc/football/getMatchCalculatorV1.qry",

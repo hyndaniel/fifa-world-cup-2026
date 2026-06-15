@@ -21,14 +21,16 @@ Basic-Auth 依赖: 密码取 cfg["server"]["password"]。关掉鉴权 (测试用
 """
 import os
 import secrets
+import threading
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from backend.config import load_config
 from backend.db import Db
+from backend import poller
 from backend import reports as reports_mod
 from backend.state import BJ, build_state, datetime
 
@@ -136,6 +138,29 @@ def create_app(db_path="wc.db", cfg=None, reports_dir="reports",
     def api_del_watch(wid: int):
         db.del_watch(wid)
         return {"ok": True}
+
+    # ---------------- /api/ingest/zucai ----------------
+    # 住宅端采集脚本 POST 足彩 getMatchCalculatorV1 的原始 JSON 到这里 (HK 机房自身
+    # 被足彩 WAF 拦, 故由住宅 IP 采集后中转)。收到即后台跑 poll_once(注入此数据) →
+    # 配 Polymarket(HK 直连) 算价值入库。即时返回受理的场数。
+    @app.post("/api/ingest/zucai", dependencies=[Depends(auth_dep)])
+    async def api_ingest_zucai(request: Request):
+        body = await request.json()
+        n = 0
+        try:
+            for day in (body.get("value") or {}).get("matchInfoList") or []:
+                n += len(day.get("subMatchList") or [])
+        except Exception:  # noqa: BLE001
+            n = 0
+
+        def work():
+            try:
+                poller.poll_once(db, cfg, zucai_fetch=lambda: body)
+            except Exception as e:  # noqa: BLE001
+                print("ingest poll_once 失败:", e)
+
+        threading.Thread(target=work, daemon=True).start()
+        return {"accepted": True, "matches": n}
 
     # ---------------- static frontend ----------------
     if os.path.isdir(frontend_dir):

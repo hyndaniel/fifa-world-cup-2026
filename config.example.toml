@@ -6,6 +6,9 @@ password = "change-me"
 [poll]
 interval_sec = 180
 zucai_pools = "had,hhad,ttg"
+# direct = 本机自己拉足彩(住宅IP可直连); ingest = 机房部署(足彩被WAF拦),
+# 不起自身足彩轮询, 靠住宅端采集脚本 POST /api/ingest/zucai 驱动。
+mode = "direct"
 
 [poly]
 tag_id = "102232"

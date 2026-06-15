@@ -24,10 +24,15 @@ def main():
         os.makedirs(d, exist_ok=True)
     Db(db_path).init()
 
-    # poller 后台线程 (自带 try/except 续跑，单轮失败不致命)
-    threading.Thread(
-        target=run_loop, args=(Db(db_path), cfg), daemon=True
-    ).start()
+    # poll 模式: "direct"(默认, 本地/住宅 自己拉足彩) | "ingest"(机房, 足彩被WAF拦,
+    # 靠住宅端 POST /api/ingest/zucai 驱动, 不起自身足彩轮询)。
+    mode = (cfg.get("poll", {}) or {}).get("mode", "direct")
+    if mode != "ingest":
+        threading.Thread(
+            target=run_loop, args=(Db(db_path), cfg), daemon=True
+        ).start()
+    else:
+        print("[run] poll mode=ingest: 不起足彩轮询, 等住宅端 POST /api/ingest/zucai")
 
     app = create_app(db_path=db_path, cfg=cfg)
     uvicorn.run(
