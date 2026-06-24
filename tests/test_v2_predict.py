@@ -1,4 +1,6 @@
-from backend.v2_predict import apply_deviations, build_v2_prediction
+import os, tempfile
+from backend.v2_predict import (apply_deviations, build_v2_prediction,
+                                record_v2_prediction, get_v2_prediction)
 
 
 def test_apply_no_deviation_normalizes():
@@ -24,3 +26,18 @@ def test_build_v2_prediction_shape():
     assert out["scenarios"] == ["默契平"]
     assert abs(sum(out["v2"].values()) - 100.0) < 0.01
     assert out["baseline"] == {"h": 30.0, "d": 30.0, "a": 40.0}  # 基线原值留存
+
+
+def test_record_and_get_v2_prediction():
+    d = tempfile.mkdtemp(); path = os.path.join(d, "c.db")
+    pred = {"match_key": "M1", "baseline": {"h": 30, "d": 30, "a": 40},
+            "v2": {"h": 20, "d": 20, "a": 60}, "deviations": [], "reliability": "中",
+            "scenarios": []}
+    record_v2_prediction(path, "M1", pred)
+    got = get_v2_prediction(path, "M1")
+    assert got["v2"]["a"] == 60 and got["reliability"] == "中"
+    # 替换语义
+    pred["reliability"] = "乱"
+    record_v2_prediction(path, "M1", pred)
+    assert get_v2_prediction(path, "M1")["reliability"] == "乱"
+    assert get_v2_prediction(path, "NONE") is None

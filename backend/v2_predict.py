@@ -1,4 +1,7 @@
 """v2 预测装配:在基线上应用有据偏离,附靠谱度 + 剧本标签。概率 %。"""
+import json
+import sqlite3
+
 _KEYS = ("h", "d", "a")
 
 
@@ -31,3 +34,33 @@ def build_v2_prediction(baseline_sheet, deviations, reliability, scenarios):
         "reliability": reliability,
         "scenarios": scenarios or [],
     }
+
+
+_V2_SCHEMA = """CREATE TABLE IF NOT EXISTS v2_predictions (
+    match_key TEXT PRIMARY KEY, ts TEXT, prediction_json TEXT)"""
+
+
+def record_v2_prediction(cache_path, match_key, prediction):
+    conn = sqlite3.connect(cache_path)
+    try:
+        conn.execute(_V2_SCHEMA)
+        conn.execute(
+            """INSERT INTO v2_predictions(match_key, ts, prediction_json)
+               VALUES (?, datetime('now'), ?)
+               ON CONFLICT(match_key) DO UPDATE SET
+                 ts=excluded.ts, prediction_json=excluded.prediction_json""",
+            (match_key, json.dumps(prediction, ensure_ascii=False)))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_v2_prediction(cache_path, match_key):
+    conn = sqlite3.connect(cache_path)
+    try:
+        conn.execute(_V2_SCHEMA)
+        r = conn.execute("SELECT prediction_json FROM v2_predictions WHERE match_key=?",
+                         (match_key,)).fetchone()
+    finally:
+        conn.close()
+    return json.loads(r[0]) if r else None
