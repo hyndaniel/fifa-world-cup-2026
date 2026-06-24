@@ -1,4 +1,6 @@
+import sqlite3, json, os, tempfile
 from backend.baseline import zucai_had_devig, blend_had, confidence, DEFAULT_WEIGHTS
+from backend.baseline import baseline_had
 
 
 def test_zucai_had_devig_sums_100():
@@ -37,3 +39,38 @@ def test_confidence_levels_and_spread():
     one = {"zucai": {"h": 60, "d": 25, "a": 15}}
     assert confidence(one)["label"] == "soft"
     assert confidence({})["label"] == "none"
+
+
+def _seed_cache(path):
+    conn = sqlite3.connect(path)
+    conn.execute("""CREATE TABLE odds_cache (id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts TEXT, source TEXT, match_key TEXT, label TEXT, ko TEXT, payload_json TEXT)""")
+    rows = [
+        ("2026-06-25T09:00:00+08:00", "zucai", "周三053", "南非 vs 韩国", "ko",
+         json.dumps({"had": {"h": 6.00, "d": 3.87, "a": 1.44}})),
+        ("2026-06-25T09:00:00+08:00", "poly", "周三053", "南非 vs 韩国", "ko",
+         json.dumps({"poly_devig": {"h": 15.4, "d": 23.4, "a": 61.2}})),
+        ("2026-06-25T09:00:00+08:00", "consensus", "周三053", "南非 vs 韩国", "ko",
+         json.dumps({"had": {"h": 6.5, "d": 4.0, "a": 1.55}})),
+    ]
+    conn.executemany("INSERT INTO odds_cache(ts,source,match_key,label,ko,payload_json) "
+                     "VALUES (?,?,?,?,?,?)", rows)
+    conn.commit(); conn.close()
+
+
+def test_baseline_had_assembles_three_sources():
+    d = tempfile.mkdtemp(); path = os.path.join(d, "c.db")
+    _seed_cache(path)
+    out = baseline_had(path, "周三053")
+    assert out is not None
+    assert set(out["sources"]) == {"zucai", "poly", "consensus"}
+    assert out["confidence"]["label"] == "hard"
+    assert abs(sum(out["baseline"].values()) - 100.0) < 0.01
+    # 三源都看好客胜(韩国) → 融合客胜应最高
+    assert out["baseline"]["a"] > out["baseline"]["h"]
+
+
+def test_baseline_had_missing_match_returns_none():
+    d = tempfile.mkdtemp(); path = os.path.join(d, "c.db")
+    _seed_cache(path)
+    assert baseline_had(path, "周三999") is None
