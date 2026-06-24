@@ -1,6 +1,7 @@
 import sqlite3, json, os, tempfile
 from backend.baseline import zucai_had_devig, blend_had, confidence, DEFAULT_WEIGHTS
 from backend.baseline import baseline_had
+from backend.baseline import record_result, get_result
 
 
 def test_zucai_had_devig_sums_100():
@@ -74,3 +75,21 @@ def test_baseline_had_missing_match_returns_none():
     d = tempfile.mkdtemp(); path = os.path.join(d, "c.db")
     _seed_cache(path)
     assert baseline_had(path, "周三999") is None
+
+
+def test_record_and_get_result_outcome_key():
+    d = tempfile.mkdtemp(); path = os.path.join(d, "c.db")
+    _seed_cache(path)  # 表 odds_cache 已建;match_results 由 record_result 自建
+    assert record_result(path, "周三053", 0, 1) == "a"   # 客胜
+    assert get_result(path, "周三053") == "a"
+    assert record_result(path, "X", 2, 2) == "d"          # 平
+    assert record_result(path, "Y", 3, 0) == "h"          # 主胜
+    # 替换语义:重录覆盖
+    assert record_result(path, "周三053", 2, 0) == "h"
+    assert get_result(path, "周三053") == "h"
+
+
+def test_get_result_missing_returns_none():
+    d = tempfile.mkdtemp(); path = os.path.join(d, "c.db")
+    _seed_cache(path)
+    assert get_result(path, "周三053") is None

@@ -71,3 +71,45 @@ def baseline_had(cache_path: str, match_key: str, weights: dict = DEFAULT_WEIGHT
         return None
     return {"match_key": match_key, "baseline": blend_had(sources, weights),
             "sources": sources, "confidence": confidence(sources)}
+
+
+_RESULTS_SCHEMA = """CREATE TABLE IF NOT EXISTS match_results (
+    match_key TEXT PRIMARY KEY, home_goals INTEGER, away_goals INTEGER,
+    outcome TEXT, ts TEXT)"""
+
+
+def _outcome_key(home_goals: int, away_goals: int) -> str:
+    if home_goals > away_goals:
+        return "h"
+    if home_goals == away_goals:
+        return "d"
+    return "a"
+
+
+def record_result(cache_path: str, match_key: str, home_goals: int, away_goals: int) -> str:
+    outcome = _outcome_key(home_goals, away_goals)
+    conn = sqlite3.connect(cache_path)
+    try:
+        conn.execute(_RESULTS_SCHEMA)
+        conn.execute(
+            """INSERT INTO match_results(match_key, home_goals, away_goals, outcome, ts)
+               VALUES (?,?,?,?,datetime('now'))
+               ON CONFLICT(match_key) DO UPDATE SET
+                 home_goals=excluded.home_goals, away_goals=excluded.away_goals,
+                 outcome=excluded.outcome, ts=excluded.ts""",
+            (match_key, home_goals, away_goals, outcome))
+        conn.commit()
+    finally:
+        conn.close()
+    return outcome
+
+
+def get_result(cache_path: str, match_key: str):
+    conn = sqlite3.connect(cache_path)
+    try:
+        conn.execute(_RESULTS_SCHEMA)
+        r = conn.execute("SELECT outcome FROM match_results WHERE match_key=?",
+                         (match_key,)).fetchone()
+    finally:
+        conn.close()
+    return r[0] if r else None
