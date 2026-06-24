@@ -1,5 +1,5 @@
 # tests/test_scorecard.py
-from backend.scorecard import three_way, aggregate
+from backend.scorecard import three_way, aggregate, deviation_audit
 
 
 def test_three_way_briers():
@@ -23,3 +23,18 @@ def test_aggregate_means_ignore_none():
     assert agg["v2_mean"] == 0.3      # (0.2+0.4)/2
     assert agg["v1_mean"] == 0.4      # 只 1 个非 None
     assert agg["market_mean"] == 0.4  # (0.3+0.5)/2
+
+
+def test_deviation_audit_helpful():
+    rows = [{"deviated": True, "v2": 0.20, "market": 0.30},   # 偏离更准
+            {"deviated": True, "v2": 0.25, "market": 0.28},
+            {"deviated": False, "v2": 0.40, "market": 0.40}]  # 不计入
+    a = deviation_audit(rows)
+    assert a["n_deviated"] == 2
+    assert a["v2_mean"] == 0.225 and a["market_mean"] == 0.29
+    assert a["delta"] < 0  # 偏离平均拉低 Brier = 有用
+
+
+def test_deviation_audit_none_when_no_deviation():
+    a = deviation_audit([{"deviated": False, "v2": 0.4, "market": 0.4}])
+    assert a["n_deviated"] == 0 and a["delta"] is None

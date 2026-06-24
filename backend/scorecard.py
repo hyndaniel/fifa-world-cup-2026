@@ -15,3 +15,13 @@ def aggregate(rows):
         vals = [r[key] for r in rows if r.get(key) is not None]
         out[f"{key}_mean"] = round(sum(vals) / len(vals), 4) if vals else None
     return out
+
+
+def deviation_audit(rows):
+    dev = [r for r in rows if r.get("deviated")]
+    if not dev:
+        return {"n_deviated": 0, "v2_mean": None, "market_mean": None, "delta": None}
+    v2m = round(sum(r["v2"] for r in dev) / len(dev), 4)
+    mkm = round(sum(r["market"] for r in dev) / len(dev), 4)
+    return {"n_deviated": len(dev), "v2_mean": v2m, "market_mean": mkm,
+            "delta": round(v2m - mkm, 4)}
