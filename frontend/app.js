@@ -330,6 +330,57 @@ function dcRow(label, contentEl, extraCls) {
   return { row, content: c };
 }
 
+function oddsArrow(sym) {
+  if (sym === "▲") return el("span", "od-up", "▲");      // 升水
+  if (sym === "▼") return el("span", "od-down", "▼");    // 降水
+  return el("span", "od-flat", "");
+}
+
+// 决策卡内可折叠赔率面板: 三源(竞彩/欧盘/Poly) × 主平负 + 变化 + 让球/总进球 + 分歧
+function renderOddsPanel(odds) {
+  const box = el("div", "odds-panel");
+  const head = el("div", "odds-head", "赔率(三源)");
+  box.appendChild(head);
+  if (!odds || !odds.sources) { box.appendChild(el("div", "odds-empty", "赔率待刷新")); return box; }
+  const body = el("div", "odds-body");
+  const s = odds.sources;
+  const rows = [["竞彩", s.zucai, "had", false], ["欧盘", s.consensus, "devig", true], ["Poly", s.poly, "devig", true]];
+  const tbl = el("div", "odds-tbl");
+  tbl.appendChild(el("div", "ot-h", ""));
+  for (const c of ["主", "平", "负"]) tbl.appendChild(el("div", "ot-h", c));
+  for (const [name, src, key, isPct] of rows) {
+    tbl.appendChild(el("div", "ot-name", name));
+    if (!src || src.stale) { for (const _k of ["h", "d", "a"]) tbl.appendChild(el("div", "ot-cell muted", "—")); continue; }
+    const vals = src[key] || {};
+    const dl = src.delta || {};
+    for (const k of ["h", "d", "a"]) {
+      const cell = el("div", "ot-cell");
+      const v = vals[k];
+      cell.appendChild(el("span", null, v == null ? "—" : (isPct ? fmtNum(v, 1) + "%" : fmtNum(v, 2))));
+      cell.appendChild(oddsArrow(dl[k]));
+      tbl.appendChild(cell);
+    }
+  }
+  body.appendChild(tbl);
+  if (s.zucai && s.zucai.hhad) {
+    const h = s.zucai.hhad;
+    body.appendChild(el("div", "odds-extra", `让球(${h.line > 0 ? "+" : ""}${h.line}): 主 ${fmtNum(h.h)} / 客 ${fmtNum(h.a)}`));
+  }
+  if (s.zucai && s.zucai.ttg && Object.keys(s.zucai.ttg).length) {
+    const ttg = s.zucai.ttg;
+    const parts = Object.keys(ttg).slice(0, 6).map((g) => `${g}球 ${fmtNum(ttg[g])}`);
+    body.appendChild(el("div", "odds-extra", "总进球: " + parts.join(" / ")));
+  }
+  const dv = odds.divergence || {};
+  if (["h", "d", "a"].some((k) => dv[k] != null && Math.abs(dv[k]) >= 3)) {
+    body.appendChild(el("div", "odds-diverge", "⚠ 竞彩偏离欧盘 ≥3pp"));
+  }
+  if (odds.fetched_at) body.appendChild(el("div", "odds-ts", "抓取 " + esc(String(odds.fetched_at)).slice(11, 16)));
+  head.addEventListener("click", () => box.classList.toggle("open"));
+  box.appendChild(body);
+  return box;
+}
+
 function buildDecisionCard(d) {
   d = d || {};
   const card = el("div", "decision-card");
@@ -498,6 +549,7 @@ function buildDecisionCard(d) {
 
   card.appendChild(rows);
   if (legsDetail) card.appendChild(legsDetail);
+  card.appendChild(renderOddsPanel(d.odds));
   return card;
 }
 
