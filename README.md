@@ -12,6 +12,44 @@
 - **不**自动下注、**不**碰资金、**不**构成投资建议。
 - 价值 = 把"几乎必亏"改善为"大致打平、偶尔薄赚 + 守住下限 + 不上头"，用数据保持清醒。
 
+## 架构
+
+四个角色:**deepsearch 情报层** = 粮草(只供料、不下结论);**v1 比分 / v2 概率 / 价值** = 三个互相隔离的脑。同一份料喂三脑、各产一份结论 → join 成**决策卡** → 推手机看板。三脑独立,所以"撞车=可信、分歧=警报"。
+
+```mermaid
+flowchart TB
+    subgraph SRC["情报与行情 · 随时间变"]
+        DS["deep-research<br/>中立情报原文"]
+        ODDS["竞彩 · 欧盘共识 · Polymarket去水"]
+    end
+
+    DS -->|"save_intel.py 只挑确证事实"| ENRICH["wc.db · enrich 事实卡"]
+    ODDS --> CACHE["odds_cache.db · 带时间戳"]
+
+    subgraph BRAINS["三脑 · 独立 subagent · v1 与 v2 互不可见"]
+        V1["v1 比分脑"]
+        V2["v2 概率脑"]
+        VAL["价值脑"]
+    end
+
+    DS -.->|读原文| V1
+    DS -.->|读原文| VAL
+    ENRICH -->|"match_fact_card 事实卡"| V2
+    CACHE -->|"baseline_market 基线"| V2
+    CACHE --> VAL
+
+    V1 --> JOIN["跨库 join → Decision"]
+    V2 --> JOIN
+    VAL --> JOIN
+    JOIN -->|"POST /api/ingest/predictions"| DASH["HK 看板 · 手机决策卡"]
+```
+
+- 🔴 **红线**:v1 与 v2 预测时互不可见，否则三方 Brier 跑分(v1/v2/市场基线)失真
+- ⏱ **新鲜度**:盘口取最新水位、intel 超 48h 不驱动偏离、WebFetch 同 URL 缓存 15min;陈旧 Poly 会伪造"假黄档"
+- 🌐 **拓扑**:LLM 只能本地 Mac 跑(订阅制无 API key);Polymarket 经 HK remote-agent 抓回;足彩走住宅代理过 WAF
+
+> 三脑职责详见下表;完整数据流 + 运行拓扑 + 置信度模型 → [`docs/架构.md`](docs/架构.md)
+
 ## 三套预测脑（互不污染）
 
 | 脑 | Agent | 产出 | 不做 |
