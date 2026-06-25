@@ -22,7 +22,11 @@ DEFAULT_OUT = os.path.join(REPO, "reports", "预测v2.md")
 
 
 def _fmt(x):
-    return f"{x:.2f}" if isinstance(x, (int, float)) else x
+    # 统一展示粒度: 数值一律 2 位小数, 缺失(None)显示 —。三均值与每场表共用,
+    # 避免每场 Brier 露出 4 位原始精度而均值只有 2 位的不齐(Minor #1/#2)。
+    if isinstance(x, (int, float)):
+        return f"{x:.2f}"
+    return "—" if x is None else x
 
 
 def render(agg, audit, per_match):
@@ -38,7 +42,8 @@ def render(agg, audit, per_match):
     lines += ["## 每场", "", "| 场次 | 靠谱度 | v1 | v2 | 市场 |", "|---|---|---|---|---|"]
     for m in per_match:
         b = m["brier"]
-        lines.append(f"| {m['match_key']} | {m.get('reliability','')} | {b.get('v1')} | {b.get('v2')} | {b.get('market')} |")
+        lines.append(f"| {m['match_key']} | {m.get('reliability','')} | "
+                     f"{_fmt(b.get('v1'))} | {_fmt(b.get('v2'))} | {_fmt(b.get('market'))} |")
     lines += ["", "_红线:概率预测非投注建议;v2 跑不赢市场就回归市场基线+避雷器。_"]
     return "\n".join(lines)
 

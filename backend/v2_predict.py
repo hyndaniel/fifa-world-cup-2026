@@ -6,17 +6,23 @@ _KEYS = ("h", "d", "a")
 
 
 def apply_deviations(baseline: dict, deviations: list) -> dict:
-    """把每条偏离的 outcome 设为 to;其余 outcome 按原比例吸收差额;最后归一到 100。"""
+    """把每条偏离的 outcome 钉到 to;非偏离 outcome 按基线原比例吸收差额;归一到 100。
+
+    先一次性收集所有被钉的 outcome(同一 outcome 多次偏离取最后一条),再统一对
+    未被钉的 outcome 分配剩余概率。这样同场多条偏离不会互相重标前者(Minor #4);
+    单条偏离结果与原实现一致。
+    """
     cur = {k: float(baseline.get(k, 0.0)) for k in _KEYS}
-    for dv in deviations:
-        oc, to = dv["outcome"], float(dv["to"])
-        others = [k for k in _KEYS if k != oc]
-        rest_old = sum(cur[k] for k in others)
+    pinned = {dv["outcome"]: float(dv["to"]) for dv in deviations}
+    for oc, to in pinned.items():
         cur[oc] = to
-        rest_new = max(0.0, 100.0 - to)
+    others = [k for k in _KEYS if k not in pinned]
+    rest_old = sum(float(baseline.get(k, 0.0)) for k in others)
+    rest_new = max(0.0, 100.0 - sum(pinned.values()))
+    if others:
         if rest_old > 0:
             for k in others:
-                cur[k] = cur[k] / rest_old * rest_new
+                cur[k] = float(baseline.get(k, 0.0)) / rest_old * rest_new
         else:
             for k in others:
                 cur[k] = rest_new / len(others)

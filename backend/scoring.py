@@ -2,7 +2,12 @@
 
 
 def brier_multi(probs: dict, actual: str) -> float:
-    """多分类 Brier = Σ(p_k − y_k)²(p_k 分数,actual 命中 y=1)。越低越准,[0,2]。"""
+    """多分类 Brier = Σ(p_k − y_k)²(p_k 分数,actual 命中 y=1)。越低越准,[0,2]。
+
+    注:仅对 probs 里出现的类求和。若 actual 不在 probs 键里(本项目胜平负 h/d/a
+    恒三键齐全,不会发生),它的 y=1 项被静默略去 → Brier 偏小;调用方须保证
+    actual ∈ probs(Minor #3)。
+    """
     s = sum(probs.values())
     if s <= 0:
         return 0.0

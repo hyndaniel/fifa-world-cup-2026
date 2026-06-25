@@ -17,6 +17,17 @@ def test_apply_single_deviation_renormalizes():
     assert abs(out["h"] - out["d"]) < 0.01  # h,d 原本相等,缩放后仍相等
 
 
+def test_apply_multi_deviation_honors_all_pins():
+    # Minor #4: 同场两条偏离都该被钉住, 后者不重标前者; 剩余给未钉的 outcome
+    out = apply_deviations({"h": 30.0, "d": 30.0, "a": 40.0},
+                           [{"outcome": "h", "to": 50.0, "reason": "r1"},
+                            {"outcome": "a", "to": 30.0, "reason": "r2"}])
+    assert abs(sum(out.values()) - 100.0) < 0.01
+    assert abs(out["h"] - 50.0) < 0.01   # 第一条仍被钉住, 未被第二条重标
+    assert abs(out["a"] - 30.0) < 0.01   # 第二条也被钉住
+    assert abs(out["d"] - 20.0) < 0.01   # 剩余 100-50-30 全归未钉的 d
+
+
 def test_build_v2_prediction_shape():
     sheet = {"match_key": "M1", "baseline": {"h": 30.0, "d": 30.0, "a": 40.0}}
     out = build_v2_prediction(sheet, [{"outcome": "a", "to": 64.0, "reason": "r"}], "乱",
