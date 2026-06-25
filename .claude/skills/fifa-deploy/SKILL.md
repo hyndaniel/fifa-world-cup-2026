@@ -7,7 +7,7 @@ description: 把 WC 价值看板部署到 HK 实盘机(aws-hk)。触发词:fifa-
 
 把 main 上一个**已 review+merge、打了日期式 tag 的 commit** 部署到 HK 实盘看板 `http://18.166.71.60:8000`。
 
-**部署架构(已核 2026-06-25):** 看板跑在 **docker-compose** 容器 `fifa-world-cup-2026-app-1`(镜像 `wc-value-dashboard:latest`),**代码 `COPY` 进镜像**(见 Dockerfile),`network_mode: host`(直接占宿主 8000)。compose 只 bind-mount `./data`(SQLite)、`./reports`(报告 md)、`./config.toml`(配置含 secrets)→ 这三样 rebuild 不丢。**所以改任何代码(前端也算)都必须 rebuild 镜像 + recreate 容器**;"改主机文件 / 静态服务即生效"那套**不适用**。
+**部署架构(已核 2026-06-25):** 看板跑在 **docker-compose** 容器 `fifa-world-cup-2026-app-1`(镜像 `wc-value-dashboard:latest`),**代码 `COPY` 进镜像**(见 Dockerfile),`network_mode: host`(直接占宿主 8000)。compose 只 bind-mount `./data`(SQLite)、`./reports`(报告 md)、`./config.toml`(配置含 secrets)→ 这三样 rebuild 不丢;且 `reports/*.md` 报告内容因挂卷**改了即生效、无需 rebuild**。**但 backend/frontend 代码烤进镜像 → 改代码必须 rebuild 镜像 + recreate 容器**;"改主机文件即生效"对代码**不适用**。
 
 **权限:** remote-agent MCP 已加载(`remote_exec`,host=`aws-hk`)。HK 上是 `ec2-user`、**有免密 sudo**;repo `/opt/github/fifa-world-cup-2026` 的 `.git` 归 root → **git 和 docker 都要 `sudo`**。
 
