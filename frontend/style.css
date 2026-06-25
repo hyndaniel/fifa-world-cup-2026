@@ -1083,6 +1083,11 @@ main {
   font-size: 10px;
   font-weight: 700;
   color: var(--yellow);
+  cursor: help; /* 提示可 hover 看「偏离」说明(原生 title) */
+}
+.dc-deviated-info {
+  opacity: 0.65;
+  font-weight: 400;
 }
 .dc-chips {
   flex-basis: 100%;

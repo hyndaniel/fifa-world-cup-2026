@@ -373,7 +373,16 @@ function buildDecisionCard(d) {
       const badge = el("span", `dc-rel ${rb.cls}`, `靠谱度 ${rb.label}`);
       v2Block.appendChild(badge);
     }
-    if (d.v2.deviated) v2Block.appendChild(el("span", "dc-deviated", "⚡偏离"));
+    if (d.v2.deviated) {
+      const dev = el("span", "dc-deviated", "⚡偏离");
+      dev.appendChild(el("span", "dc-deviated-info", " ⓘ"));
+      // 鼠标指到弹说明(原生 title: 永不被卡片 overflow 裁切、多行稳)
+      dev.title =
+        "偏离 = 这场 v2 没照抄市场、据确证事实改了数。\n" +
+        "默认照抄市场(聪明钱、稳);偏离是 v2 自己的判断,该带怀疑看 —— 还没证明能跑赢市场,赛后用 Brier 验。\n" +
+        "点「明细」看:改了哪条腿、从多少→多少、引的什么因子。";
+      v2Block.appendChild(dev);
+    }
     if (Array.isArray(d.v2.scenarios) && d.v2.scenarios.length) {
       const chips = el("div", "dc-chips");
       for (const s of d.v2.scenarios) {
