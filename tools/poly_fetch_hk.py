@@ -38,6 +38,19 @@ import urllib.request
 
 GAMMA = "https://gamma-api.polymarket.com"
 WC_TAG = "102232"  # FIFA World Cup tag
+
+_OPENER = urllib.request.build_opener()  # 默认: 沿用 http(s)_proxy 环境变量
+
+
+def set_proxy(proxy):
+    """安装走指定代理的 opener(本地 CN 直连 gamma 被墙, 经本地代理可达);
+    None → 默认 opener(仍读环境代理)。"""
+    global _OPENER
+    if proxy:
+        _OPENER = urllib.request.build_opener(
+            urllib.request.ProxyHandler({"http": proxy, "https": proxy}))
+    else:
+        _OPENER = urllib.request.build_opener()
 # gamma 走 Cloudflare, 默认 Python-urllib UA 会 403; 用浏览器 UA。
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
       "(KHTML, like Gecko) Version/16.0 Safari/605.1.15")
@@ -93,7 +106,7 @@ def build_list(cache_path: str, out_path: str):
 def _get(path: str):
     req = urllib.request.Request(GAMMA + path, headers={"User-Agent": UA, "Accept": "application/json"})
     try:
-        with urllib.request.urlopen(req, timeout=30) as r:
+        with _OPENER.open(req, timeout=30) as r:
             return json.load(r)
     except Exception as e:  # noqa: BLE001 — 单次失败返空, 由调用方记 miss
         sys.stderr.write(f"  [warn] fetch {path[:64]} -> {e!r}\n")
@@ -157,7 +170,8 @@ def devig(raw):
             "a": round(vals[2] / s * 100, 1)}
 
 
-def fetch(list_path: str, out_path: str):
+def fetch(list_path: str, out_path: str, proxy=None):
+    set_proxy(proxy)
     matches = json.load(open(list_path, encoding="utf-8"))
     print("拉取 WC event 列表 ...")
     idx = list_events()
@@ -206,9 +220,11 @@ def main():
     p_bl.add_argument("--cache", default=DEFAULT_CACHE)
     p_bl.add_argument("--out", default=os.path.join(REPO, ".cache", "poly_matches.json"))
 
-    p_f = sub.add_parser("fetch", help="[aws-hk] 纯 stdlib 抓 Poly → ingest JSON")
+    p_f = sub.add_parser("fetch", help="[Mac经代理/aws-hk] 抓 Poly → ingest JSON")
     p_f.add_argument("list_path")
     p_f.add_argument("out_path")
+    p_f.add_argument("--proxy", default=os.environ.get("WC_HTTPS_PROXY"),
+                     help="本地代理(如 http://127.0.0.1:7897); 不给则沿用环境代理/直连")
 
     p_i = sub.add_parser("ingest", help="[Mac] 喂回 odds_watch 缓存(source=poly)")
     p_i.add_argument("ingest_path")
@@ -218,7 +234,7 @@ def main():
     if a.cmd == "build-list":
         build_list(a.cache, a.out)
     elif a.cmd == "fetch":
-        fetch(a.list_path, a.out_path)
+        fetch(a.list_path, a.out_path, proxy=a.proxy)
     elif a.cmd == "ingest":
         sys.exit(ingest(a.ingest_path, a.cache))
 
