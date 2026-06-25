@@ -62,27 +62,67 @@ def _latest_payload(conn, source, match_key):
     return json.loads(r[0]) if r else None
 
 
-def baseline_had(cache_path: str, match_key: str, weights: dict = DEFAULT_WEIGHTS):
-    """从 odds_cache.db 装配一场胜平负基线表。无任何源 → None。"""
+HAD_CFG = {"market": "had", "pool": "had", "keys": _KEYS, "weights": DEFAULT_WEIGHTS}
+HHAD_CFG = {"market": "hhad", "pool": "hhad", "keys": _KEYS, "weights": {"zucai": 1.0}}
+
+
+def _market_keys(cfg, payloads):
+    """固定 keys 直接返回;keys=None(ttg)从竞彩 payload 动态取并按数值排序。"""
+    if cfg["keys"] is not None:
+        return cfg["keys"]
+    pool = (payloads.get("zucai") or {}).get(cfg["pool"]) or {}
+    return tuple(sorted((k for k in pool if k != "line"), key=lambda x: int(x)))
+
+
+def baseline_market(cache_path, match_key, cfg, weights=None):
+    """从 odds_cache 装配一场某盘口基线表。无任何源 → None。
+    返回 {match_key, market, baseline, sources, confidence[, line]}。"""
+    weights = weights or cfg["weights"]
     conn = sqlite3.connect(cache_path)
     try:
-        sources = {}
-        z = _latest_payload(conn, "zucai", match_key)
-        if z and z.get("had"):
-            sources["zucai"] = zucai_had_devig(z["had"])
-        p = _latest_payload(conn, "poly", match_key)
-        if p and p.get("poly_devig"):
-            sources["poly"] = {k: round(float(p["poly_devig"][k]), 1) for k in _KEYS
-                               if p["poly_devig"].get(k) is not None}
-        c = _latest_payload(conn, "consensus", match_key)
-        if c and c.get("had"):
-            sources["consensus"] = zucai_had_devig(c["had"])  # 共识 had 也是欧赔,同路去水
+        raw = {s: _latest_payload(conn, s, match_key) for s in ("zucai", "poly", "consensus")}
     finally:
         conn.close()
+    keys = _market_keys(cfg, raw)
+    pool, sources, line = cfg["pool"], {}, None
+    z = raw.get("zucai")
+    if z and z.get(pool):
+        zp = z[pool]
+        line = zp.get("line") if isinstance(zp, dict) else None
+        sources["zucai"] = zucai_odds_devig(zp, keys)
+    # poly / consensus 仅对胜平负有对应定价(我们的源里 hhad/ttg 无)
+    if pool == "had":
+        p = raw.get("poly")
+        if p and p.get("poly_devig"):
+            sources["poly"] = {k: round(float(p["poly_devig"][k]), 1) for k in keys
+                               if p["poly_devig"].get(k) is not None}
+        c = raw.get("consensus")
+        if c and c.get("had"):
+            sources["consensus"] = zucai_odds_devig(c["had"], keys)
     if not sources:
         return None
-    return {"match_key": match_key, "baseline": blend_had(sources, weights),
-            "sources": sources, "confidence": confidence(sources)}
+    out = {"match_key": match_key, "market": cfg["market"],
+           "baseline": blend(sources, keys, weights),
+           "sources": sources, "confidence": confidence(sources, keys)}
+    if line is not None:
+        out["line"] = line
+    return out
+
+
+def baseline_had(cache_path: str, match_key: str, weights: dict = DEFAULT_WEIGHTS):
+    """胜平负基线(baseline_market 瘦封装, 向后兼容)。无任何源 → None。"""
+    return baseline_market(cache_path, match_key, HAD_CFG, weights)
+
+
+def _hhad_outcome(home_goals: int, away_goals: int, line) -> str:
+    """让球结算: (主 + line - 客) 的符号 → h/d/a。line=主队让球数(主让一球记 -1)。
+    整数盘三分法, 无 push。"""
+    adj = home_goals + float(line) - away_goals
+    if adj > 0:
+        return "h"
+    if adj == 0:
+        return "d"
+    return "a"
 
 
 _RESULTS_SCHEMA = """CREATE TABLE IF NOT EXISTS match_results (

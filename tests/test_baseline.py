@@ -3,6 +3,7 @@ from backend.baseline import zucai_had_devig, blend_had, confidence, DEFAULT_WEI
 from backend.baseline import baseline_had
 from backend.baseline import record_result, get_result
 from backend.baseline import zucai_odds_devig, blend  # 追加到现有 import 行下方
+from backend.baseline import baseline_market, HHAD_CFG, _hhad_outcome  # 追加
 
 
 def test_zucai_had_devig_sums_100():
@@ -112,3 +113,40 @@ def test_get_result_missing_returns_none():
     d = tempfile.mkdtemp(); path = os.path.join(d, "c.db")
     _seed_cache(path)
     assert get_result(path, "周三053") is None
+
+
+def _seed_hhad(path):
+    conn = sqlite3.connect(path)
+    conn.execute("""CREATE TABLE IF NOT EXISTS odds_cache (id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts TEXT, source TEXT, match_key TEXT, label TEXT, ko TEXT, payload_json TEXT)""")
+    conn.execute("INSERT INTO odds_cache(ts,source,match_key,label,ko,payload_json) "
+                 "VALUES (?,?,?,?,?,?)",
+                 ("t", "zucai", "周三053", "南非 vs 韩国", "ko",
+                  json.dumps({"hhad": {"line": -1, "h": 2.10, "d": 3.30, "a": 3.00}})))
+    conn.commit(); conn.close()
+
+
+def test_baseline_market_hhad_single_source_soft_with_line():
+    d = tempfile.mkdtemp(); path = os.path.join(d, "c.db")
+    _seed_hhad(path)
+    out = baseline_market(path, "周三053", HHAD_CFG)
+    assert out["market"] == "hhad" and out["line"] == -1
+    assert set(out["sources"]) == {"zucai"}
+    assert out["confidence"]["label"] == "soft"
+    assert abs(sum(out["baseline"].values()) - 100.0) < 0.01
+
+
+def test_baseline_had_still_three_source_hard():
+    # 零回归: baseline_had(经 baseline_market) 仍三源硬锚
+    d = tempfile.mkdtemp(); path = os.path.join(d, "c.db")
+    _seed_cache(path)
+    out = baseline_had(path, "周三053")
+    assert out["confidence"]["label"] == "hard"
+    assert out["baseline"]["a"] > out["baseline"]["h"]
+
+
+def test_hhad_outcome_boundaries():
+    assert _hhad_outcome(2, 0, -1) == "h"   # 主让一球, 2-0 净+1 → 赢盘
+    assert _hhad_outcome(1, 0, -1) == "d"   # 主让一球, 1-0 净 0  → 走盘(竞彩计平)
+    assert _hhad_outcome(0, 0, -1) == "a"   # 主让一球, 0-0 净-1 → 输盘
+    assert _hhad_outcome(0, 1, 1) == "d"    # 主受让一球, 0-1 净 0 → 平
