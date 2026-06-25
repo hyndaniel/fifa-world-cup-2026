@@ -229,6 +229,72 @@ main {
   display: flex;
   flex-direction: column;
 }
+/* 价值雷达分组卡: 一场一卡, 队名/开赛时间在组头出现一次, 多条腿挂在下面 */
+.radar-group {
+  border-bottom: 1px solid var(--border);
+}
+.radar-group:last-child {
+  border-bottom: none;
+}
+.rg-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 6px 4px;
+}
+.rg-title {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  overflow: hidden;
+}
+.rg-match {
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rg-ko {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.rg-count {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-dim);
+  background: var(--bg-3);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+.radar-group.flag-green .rg-match {
+  border-left: 3px solid var(--green);
+  padding-left: 6px;
+}
+.radar-group.flag-yellow .rg-match {
+  border-left: 3px solid var(--yellow);
+  padding-left: 6px;
+}
+.rg-legs {
+  display: flex;
+  flex-direction: column;
+}
+/* 组内每条腿: 缩进 + 虚线分隔 (实线给组与组之间) */
+.rg-legs .radar-item {
+  border-bottom: 1px dashed var(--border);
+}
+.rg-legs .radar-item:last-child {
+  border-bottom: none;
+}
+.rg-legs .radar-row {
+  padding-left: 12px;
+}
+
 .radar-item {
   border-bottom: 1px solid var(--border);
   border-left: 3px solid transparent;
