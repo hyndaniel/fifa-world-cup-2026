@@ -4,6 +4,7 @@ from backend.baseline import baseline_had
 from backend.baseline import record_result, get_result
 from backend.baseline import zucai_odds_devig, blend  # 追加到现有 import 行下方
 from backend.baseline import baseline_market, HHAD_CFG, _hhad_outcome  # 追加
+from backend.baseline import TTG_CFG, over_under, _ttg_outcome, get_result_goals  # 追加
 
 
 def test_zucai_had_devig_sums_100():
@@ -150,3 +151,53 @@ def test_hhad_outcome_boundaries():
     assert _hhad_outcome(1, 0, -1) == "d"   # 主让一球, 1-0 净 0  → 走盘(竞彩计平)
     assert _hhad_outcome(0, 0, -1) == "a"   # 主让一球, 0-0 净-1 → 输盘
     assert _hhad_outcome(0, 1, 1) == "d"    # 主受让一球, 0-1 净 0 → 平
+
+
+def _seed_ttg(path):
+    conn = sqlite3.connect(path)
+    conn.execute("""CREATE TABLE IF NOT EXISTS odds_cache (id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts TEXT, source TEXT, match_key TEXT, label TEXT, ko TEXT, payload_json TEXT)""")
+    conn.execute("INSERT INTO odds_cache(ts,source,match_key,label,ko,payload_json) "
+                 "VALUES (?,?,?,?,?,?)",
+                 ("t", "zucai", "周三053", "南非 vs 韩国", "ko",
+                  json.dumps({"ttg": {"0": 12.0, "1": 6.0, "2": 4.5, "3": 4.5,
+                                      "4": 7.0, "5": 13.0, "6": 26.0, "7": 41.0}})))
+    conn.commit(); conn.close()
+
+
+def test_baseline_market_ttg_dynamic_keys_sum_100():
+    d = tempfile.mkdtemp(); path = os.path.join(d, "c.db")
+    _seed_ttg(path)
+    out = baseline_market(path, "周三053", TTG_CFG)
+    assert out["market"] == "ttg"
+    assert set(out["baseline"]) == {"0", "1", "2", "3", "4", "5", "6", "7"}
+    assert abs(sum(out["baseline"].values()) - 100.0) < 0.01
+    assert out["confidence"]["label"] == "soft"   # 竞彩单源
+
+
+def test_over_under_derives_from_dist():
+    dist = {"0": 10.0, "1": 20.0, "2": 30.0, "3": 25.0, "4": 15.0}
+    ou = over_under(dist, lines=(2.5,))
+    assert ou["2.5"]["over"] == 40.0    # P(3)+P(4)
+    assert ou["2.5"]["under"] == 60.0
+
+
+def test_ttg_outcome_caps_at_7():
+    assert _ttg_outcome(2, 1) == "3"
+    assert _ttg_outcome(5, 4) == "7"    # 9 → cap 7
+
+
+def test_get_result_goals_roundtrip():
+    d = tempfile.mkdtemp(); path = os.path.join(d, "c.db")
+    _seed_ttg(path)
+    record_result(path, "周三053", 2, 1)
+    assert get_result_goals(path, "周三053") == (2, 1)
+    assert get_result_goals(path, "缺") is None
+
+
+def test_actual_for_dispatches_by_market():
+    from backend.baseline import _actual_for
+    assert _actual_for("had", 2, 0, None) == "h"
+    assert _actual_for("hhad", 1, 0, -1) == "d"     # 主让一球 1-0 → 走盘
+    assert _actual_for("hhad", 2, 0, None) is None  # 让球缺 line → None(不计分)
+    assert _actual_for("ttg", 2, 1) == "3"          # line 省略默认 None

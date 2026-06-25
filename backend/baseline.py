@@ -64,6 +64,7 @@ def _latest_payload(conn, source, match_key):
 
 HAD_CFG = {"market": "had", "pool": "had", "keys": _KEYS, "weights": DEFAULT_WEIGHTS}
 HHAD_CFG = {"market": "hhad", "pool": "hhad", "keys": _KEYS, "weights": {"zucai": 1.0}}
+TTG_CFG = {"market": "ttg", "pool": "ttg", "keys": None, "weights": {"zucai": 1.0}}
 
 
 def _market_keys(cfg, payloads):
@@ -165,3 +166,44 @@ def get_result(cache_path: str, match_key: str):
     finally:
         conn.close()
     return r[0] if r else None
+
+
+def over_under(dist: dict, lines=(2.5,)) -> dict:
+    """从总进球分布派生大小球。P(大 L)=Σ_{k>L} P(k)。返回 {"2.5":{"over":%,"under":%}}。"""
+    out = {}
+    for L in lines:
+        over = round(sum(v for k, v in dist.items() if int(k) > L), 1)
+        out[str(L)] = {"over": over, "under": round(100.0 - over, 1)}
+    return out
+
+
+def _ttg_outcome(home_goals: int, away_goals: int, cap: int = 7) -> str:
+    """总进球 actual: min(主+客, cap) → 字符串键('7'=7+)。"""
+    return str(min(home_goals + away_goals, cap))
+
+
+def get_result_goals(cache_path: str, match_key: str):
+    """取某场实际进球 (home, away);无 → None。"""
+    conn = sqlite3.connect(cache_path)
+    try:
+        conn.execute(_RESULTS_SCHEMA)
+        r = conn.execute("SELECT home_goals, away_goals FROM match_results WHERE match_key=?",
+                         (match_key,)).fetchone()
+    finally:
+        conn.close()
+    return (r[0], r[1]) if r else None
+
+
+# 盘口注册表 + 实际结果派生(报告/回测共用单点真相, 避免各自重写)
+MARKETS = (("had", HAD_CFG), ("hhad", HHAD_CFG), ("ttg", TTG_CFG))
+
+
+def _actual_for(market, hg, ag, line=None):
+    """按盘口把实际进球派生成该盘口 actual 键。让球缺 line → None(不计分)。"""
+    if market == "had":
+        return _outcome_key(hg, ag)
+    if market == "hhad":
+        return _hhad_outcome(hg, ag, line) if line is not None else None
+    if market == "ttg":
+        return _ttg_outcome(hg, ag)
+    return None
