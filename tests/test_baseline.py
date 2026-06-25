@@ -2,6 +2,7 @@ import sqlite3, json, os, tempfile
 from backend.baseline import zucai_had_devig, blend_had, confidence, DEFAULT_WEIGHTS
 from backend.baseline import baseline_had
 from backend.baseline import record_result, get_result
+from backend.baseline import zucai_odds_devig, blend  # 追加到现有 import 行下方
 
 
 def test_zucai_had_devig_sums_100():
@@ -40,6 +41,24 @@ def test_confidence_levels_and_spread():
     one = {"zucai": {"h": 60, "d": 25, "a": 15}}
     assert confidence(one)["label"] == "soft"
     assert confidence({})["label"] == "none"
+
+
+def test_zucai_odds_devig_generic_keys_sum_100():
+    out = zucai_odds_devig({"0": 5.0, "1": 2.5, "2": 3.0}, keys=("0", "1", "2"))
+    assert abs(sum(out.values()) - 100.0) < 0.5      # 1 位四舍五入残差容差
+    assert out["1"] > out["2"] > out["0"]            # 赔率越低概率越高
+
+
+def test_blend_generic_keys_single_source_sum_100():
+    out = blend({"zucai": {"0": 20.0, "1": 30.0, "2": 25.0, "3": 25.0}},
+                keys=("0", "1", "2", "3"), weights={"zucai": 1.0})
+    assert abs(sum(out.values()) - 100.0) < 0.01
+    assert set(out) == {"0", "1", "2", "3"}
+
+
+def test_confidence_generic_keys_single_source_soft():
+    c = confidence({"zucai": {"0": 50, "1": 50}}, keys=("0", "1"))
+    assert c["n_sources"] == 1 and c["label"] == "soft"
 
 
 def _seed_cache(path):
