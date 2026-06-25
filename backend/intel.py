@@ -25,9 +25,11 @@ def _team_card(db, team_cn, now_bj, cap, stale_hours):
     for n in (e.get("news") or []):
         age = _age_hours(n.get("ts"), now_bj)
         news.append({"title": n.get("title"), "url": n.get("url"),
-                     "age_h": age, "stale": age is None or age > stale_hours})
-    # 新近优先: age_h 小者在前; 不可解析(None)排末
-    news.sort(key=lambda x: (x["age_h"] is None,
+                     "age_h": age,
+                     # 未来时间(负龄, 源时钟偏差/错标时区)也算 stale: 不可信, 绝不当活因子
+                     "stale": age is None or age < 0 or age > stale_hours})
+    # 非 stale 优先, 其内新近优先; stale(含不可解析/未来)沉底, 不冒充"最新"
+    news.sort(key=lambda x: (x["stale"], x["age_h"] is None,
                              x["age_h"] if x["age_h"] is not None else 0.0))
     return {"team": team_cn, "lineup": e.get("lineup"),
             "has_intel": bool(news), "news": news[:cap]}
@@ -45,6 +47,6 @@ def match_fact_card(db, match_key, now_bj, cap=5, stale_hours=48):
         "match": f"{home} vs {away}",
         "as_of_bj": now_bj.isoformat(timespec="seconds"),
         "teams": teams,
-        "note": ("首发源暂缺(恒 null);新闻>%dh 或 pubDate 不可解析 标 stale;"
-                 "仅 watchlist 覆盖队有情报" % stale_hours),
+        "note": ("首发源暂缺(恒 null);新闻>%dh、pubDate 不可解析、或时间为未来(负龄)"
+                 "标 stale;仅 watchlist 覆盖队有情报" % stale_hours),
     }

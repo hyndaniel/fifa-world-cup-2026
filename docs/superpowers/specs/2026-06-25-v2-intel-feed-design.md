@@ -60,7 +60,7 @@ match_fact_card(db, match_key, now_bj, cap=5, stale_hours=48) -> dict
 - 步骤:
   1. `db.match(match_key)`(**新增 getter**:按 `zucai_num` 查 `matches` 一行 → `{home_cn, away_cn, ...}`;无 → 返回 `{match_key, match:None, teams:[], note:"无此场"}`)。
   2. 每队 `db.latest_enrich(team_cn)` → `{lineup, news, ts}`(无 → `has_intel:False, news:[]`)。
-  3. 每条 news:`email.utils.parsedate_to_datetime(ts)` 解析 pubDate → `age_h = (now_bj − pub)` 小时(保留 1 位小数);**解析失败 → `age_h=None`**。`stale = (age_h is None) or (age_h > stale_hours)`。按 pub 新近降序、截最近 `cap` 条。
+  3. 每条 news:`email.utils.parsedate_to_datetime(ts)` 解析 pubDate → `age_h = (now_bj − pub)` 小时(保留 1 位小数);**解析失败 → `age_h=None`**。`stale = (age_h is None) or (age_h < 0) or (age_h > stale_hours)`(**未来时间=负龄**,源时钟偏差/错标时区导致,不可信→stale)。排序:**非 stale 优先、其内新近优先;stale 沉底**(不冒充"最新"),截最近 `cap` 条。
 - 返回(形状):
 ```json
 {"match_key":"周四055","match":"南非 vs 韩国","as_of_bj":"2026-06-25T20:00:00+08:00",

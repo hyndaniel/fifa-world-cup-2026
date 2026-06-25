@@ -52,3 +52,16 @@ def test_fact_card_missing_match(tmp_path):
     db = _db(tmp_path)
     card = match_fact_card(db, "无此场", NOW)
     assert card["teams"] == [] and card["note"] == "无此场"
+
+
+def test_fact_card_future_dated_is_stale_and_sinks(tmp_path):
+    # 源时钟偏差/错标时区导致未来时间戳(负龄)→ 不可信, 必须 stale, 且不冒充"最新"
+    db = _db(tmp_path)
+    db.save_enrich("南非", None, [
+        {"title": "live", "url": "u1", "ts": "25 Jun 2026 09:00:00 +0000"},    # 3h 前, live
+        {"title": "future", "url": "u2", "ts": "25 Jun 2026 18:00:00 +0000"},  # 未来 6h, 负龄
+    ])
+    sa = next(t for t in match_fact_card(db, "周四055", NOW)["teams"] if t["team"] == "南非")
+    fut = next(n for n in sa["news"] if n["title"] == "future")
+    assert fut["age_h"] < 0 and fut["stale"] is True          # 未来 = stale
+    assert sa["news"][0]["title"] == "live"                   # live 在前, 未来沉底
