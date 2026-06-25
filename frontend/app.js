@@ -88,6 +88,9 @@ const state = {
   cdTimer: null,
   pollTimer: null,
   activeReport: null,
+  decFilter: "upcoming",   // 决策面板默认筛选: 未结束
+  decSel: null,            // 当前选中场 match_key
+  _lastDecisions: [],      // 末次 decisions, 供筛选切换重渲染
 };
 
 // ================= 信号语言 (flag -> 标签/类/点) =================
@@ -498,15 +501,108 @@ function buildDecisionCard(d) {
   return card;
 }
 
-function renderDecisions(decisions) {
-  const list = $("#decision-list");
-  if (!list) return;
-  list.innerHTML = "";
-  if (!decisions || decisions.length === 0) {
-    list.appendChild(el("div", "empty", "今日暂无决策卡, 在本地跑 /跑今天 生成"));
-    return;
+// 决策卡的最高级 flag (取 value.legs + best_leg)
+function decTopFlag(d) {
+  const legs = (d.value && Array.isArray(d.value.legs)) ? d.value.legs : [];
+  const flags = legs.map((l) => l.flag).filter(Boolean);
+  if (d.value && d.value.best_leg && d.value.best_leg.flag) flags.push(d.value.best_leg.flag);
+  return flags.length ? topFlag(flags) : "skip";
+}
+// "M.D HH:MM" -> "HH:MM"
+function koTime(ko) {
+  const p = String(ko || "").trim().split(" ");
+  return p.length === 2 ? p[1] : (ko || "—");
+}
+function buildScheduleRow(d) {
+  const flag = decTopFlag(d);
+  const row = el("div", `sched-row flag-${flag === "skip" ? "skip" : flag}`);
+  if (d.view_status !== "upcoming") row.classList.add("done");
+  row.appendChild(signalDot(flag));
+  row.appendChild(el("div", "sr-time", koTime(d.ko_bj)));
+  const home = `${d.home_flag ? d.home_flag + " " : ""}${d.home_cn || ""}`.trim();
+  const away = `${d.away_flag ? d.away_flag + " " : ""}${d.away_cn || ""}`.trim();
+  row.appendChild(el("div", "sr-match", home && away ? `${home} vs ${away}` : (d.match_key || "—")));
+  if (d.v1 && d.v1.score != null) row.appendChild(el("div", "sr-v1", `v1 ${d.v1.score}`));
+  const best = d.value && d.value.best_leg;
+  if (best) {
+    const b = flagBadge(best.flag);
+    const chip = el("div", `sr-chip ${b.cls}`);
+    chip.appendChild(signalDot(best.flag));
+    chip.appendChild(el("span", null, best.desc || `${best.market || ""} ${best.outcome || ""}`.trim() || "最不亏"));
+    const ev = best.ev_pct;
+    if (ev != null && !Number.isNaN(Number(ev))) {
+      chip.appendChild(el("span", Number(ev) >= 0 ? "ev-pos" : "ev-neg", fmtSignedPct(ev)));
+    }
+    row.appendChild(chip);
   }
-  for (const d of decisions) list.appendChild(buildDecisionCard(d));
+  return row;
+}
+
+function renderDecisions(decisions) {
+  const mount = $("#decision-list");
+  if (!mount) return;
+  decisions = decisions || [];
+  state._lastDecisions = decisions;
+  mount.innerHTML = "";
+
+  // 筛选条
+  const bar = el("div", "dec-filter");
+  const FILTERS = [["upcoming", "未结束"], ["all", "全部"], ["edge", "仅绿"]];
+  for (const [k, lab] of FILTERS) {
+    const b = el("button", `df-btn${state.decFilter === k ? " on" : ""}`, lab);
+    b.addEventListener("click", () => { state.decFilter = k; renderDecisions(state._lastDecisions); });
+    bar.appendChild(b);
+  }
+  mount.appendChild(bar);
+
+  if (decisions.length === 0) { mount.appendChild(el("div", "empty", "今日暂无决策卡, 在本地跑 /跑今天 生成")); return; }
+
+  // 应用筛选
+  let rows = decisions.slice();
+  if (state.decFilter === "upcoming") rows = rows.filter((d) => d.view_status === "upcoming");
+  if (state.decFilter === "edge") rows = rows.filter((d) => decTopFlag(d) === "green");
+  if (rows.length === 0) { mount.appendChild(el("div", "empty", "暂无符合条件的场次")); return; }
+
+  // 选中默认 = 第一行
+  if (!state.decSel || !rows.some((d) => d.match_key === state.decSel)) state.decSel = rows[0].match_key;
+
+  const mobile = window.matchMedia("(max-width:820px)").matches;
+  const sel = rows.find((d) => d.match_key === state.decSel) || rows[0];
+  const groups = [
+    ["今日 · 未结束", rows.filter((d) => d.view_status === "upcoming")],
+    ["已结束 / 进行中", rows.filter((d) => d.view_status !== "upcoming")],
+  ];
+
+  const buildList = (container) => {
+    for (const [label, arr] of groups) {
+      if (!arr.length) continue;
+      container.appendChild(el("div", "dec-group-h", label));
+      for (const d of arr) {
+        const row = buildScheduleRow(d);
+        if (d.match_key === state.decSel) row.classList.add("sel");
+        row.addEventListener("click", () => { state.decSel = d.match_key; renderDecisions(state._lastDecisions); });
+        container.appendChild(row);
+        if (mobile && d.match_key === state.decSel) {
+          const card = buildDecisionCard(d);
+          card.classList.add("dec-inline");
+          container.appendChild(card);
+        }
+      }
+    }
+  };
+
+  if (mobile) {
+    buildList(mount);
+  } else {
+    const split = el("div", "dec-split");
+    const left = el("div", "dec-list-col");
+    buildList(left);
+    const panel = el("div", "dec-panel");
+    panel.appendChild(buildDecisionCard(sel));
+    split.appendChild(left);
+    split.appendChild(panel);
+    mount.appendChild(split);
+  }
 }
 
 async function loadDecisions() {
@@ -908,6 +1004,11 @@ function init() {
   setupWatchAdd();
   setupBetForm();
   setupRadarRefresh();
+  window.matchMedia("(max-width:820px)").addEventListener("change", () => {
+    if ($("#view-decisions") && $("#view-decisions").classList.contains("active")) {
+      renderDecisions(state._lastDecisions);
+    }
+  });
   setupThemeSwitch();
   // 初始 tab: 跟随 #hash (默认 decisions)
   const initial = (location.hash || "").slice(1);
