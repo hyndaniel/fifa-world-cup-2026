@@ -707,6 +707,11 @@ main {
   font-weight: 600;
   color: var(--fair);
   letter-spacing: 0.04em;
+  cursor: help; /* 提示可 hover 看「偏离」说明(原生 title) */
+}
+.dc-deviated-info {
+  opacity: 0.65;
+  font-weight: 400;
 }
 .dc-chips { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 5px; margin-top: 2px; }
 .dc-chip {
