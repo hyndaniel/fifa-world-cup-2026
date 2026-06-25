@@ -1,0 +1,28 @@
+{
+  "_meta": "deep-search-今晚6场赛前情报-2026-06-25.md 抽取的 ✅确证事实 (停赛/确定伤缺/官宣大轮换)。⚠️未坐实项(N'Dicka首发存疑/Brobbey首发疑/Pulisic存疑/Leckie存疑/主裁/单黄即停名单)不入此表。出线形势/动机/叙事不入此表(给v1/odds-analyst)。喂给 v2 的口: tools/save_intel.py。库拉索/突尼斯/土耳其/澳大利亚 无v2级确证缺阵→不写, v2 照抄基线=正确。",
+  "厄瓜多尔": [
+    {"title": "组织核心 Kendry Páez 停赛缺阵(最需进球一战)", "url": "https://www.fanduel.com/research/ecuador-vs-germany-prediction-lineups-preview-picks-and-best-bets-world-cup-2026-group-e", "age_h": 0}
+  ],
+  "德国": [
+    {"title": "Schlotterbeck 脚踝韧带伤报销整届(Rüdiger 顶替)", "url": "https://www.bundesliga.com/en/bundesliga/news/nico-schlotterbeck-germany-ankle-injury-world-cup-2026-37923", "age_h": 0},
+    {"title": "已锁头名走过场, 多源预计大幅轮换约8处(Musiala/Havertz/Sané/Kimmich 或轮休)", "url": "https://onefootball.com/en/news/ecuador-vs-germany-preview-team-news-and-predicted-lineups-43050408", "age_h": 0}
+  ],
+  "科特迪瓦": [
+    {"title": "右后卫 Singo(腿筋)几乎确定缺阵(Guela Doué 顶替)", "url": "https://www.sportsmole.co.uk/football/ivory-coast/world-cup-2026/predicted-lineups/singo-update-ndicka-boost-predicted-ivory-coast-lineup-vs-curacao_599887.html", "age_h": 0}
+  ],
+  "荷兰": [
+    {"title": "van de Ven/Summerville/Depay 各背1黄, 再吃即停32强首战(用人趋保守); Depay 大腿伤愈预计替补", "url": "https://sports.yahoo.com/articles/world-cup-yellow-card-suspension-200649478.html", "age_h": 0}
+  ],
+  "日本": [
+    {"title": "久保建英膝伤确认缺阵(边路爆点出局, Itō/Nakamura/Doan 顶替)", "url": "https://www.rotowire.com/soccer/headlines/takefusa-kubo-injury-ruled-out-against-sweden-520669", "age_h": 0}
+  ],
+  "瑞典": [
+    {"title": "Isak 腿部骨折后复出可用, 与 Gyökeres 组双枪(背水一战火力指望)", "url": "https://www.goal.com/en/news/netherlands-sweden-world-cup-preview/bltf9940d1e6141f392", "age_h": 0}
+  ],
+  "巴拉圭": [
+    {"title": "Almirón 捂嘴新规首例红牌停赛(核心10号/右路攻击点缺阵); Diego Gómez 伤愈回首发", "url": "https://www.espn.com/soccer/story/_/id/49123197/miguel-almiron-red-card-covering-mouth-paraguay-turkiye-2026-world-cup", "age_h": 0}
+  ],
+  "美国": [
+    {"title": "Adams/Balogun/Richards/A.Robinson 各背1黄, Pochettino 明确不冒险、四人很可能整场轮休(大轮换护牌)", "url": "https://www.si.com/soccer/four-usmnt-players-suspension-tightrope-vs-turkiye", "age_h": 0}
+  ]
+}
