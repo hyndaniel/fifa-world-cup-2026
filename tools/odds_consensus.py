@@ -74,14 +74,15 @@ def _book_rows(fid: str):
     ref = OUZHI.format(fid=fid)
     html = _get(ref)
     rows = _parse_rows(html)
-    m = re.search(r'_total\s*=\s*(\d+)', html)
+    m = re.search(r'\b_total\s*=\s*(\d+)', html)  # \b 防误命中 page_total 之类子串
     total = int(m.group(1)) if m else len(rows)
     seen = {r[0] for r in rows}
     guard = 0
     while len(rows) < total and guard < 20:
         guard += 1
         more = _parse_rows(_get(OUZHI_PAGE.format(fid=fid, start=len(rows)), referer=ref))
-        fresh = [r for r in more if r[0] not in seen]
+        # 名缺失("?")不参与去重 —— 否则首页一个"?"会把后续所有解析失败的公司误判为重复而丢弃
+        fresh = [r for r in more if r[0] == "?" or r[0] not in seen]
         if not fresh:
             break  # 翻页无新公司 -> 到底/重复, 停, 不死循环
         seen.update(r[0] for r in fresh)
