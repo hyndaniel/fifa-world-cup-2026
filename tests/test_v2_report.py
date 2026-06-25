@@ -57,3 +57,22 @@ def test_collect_smoke_db_assembles_per_market():
     assert mk in keys                                       # had 含已播种场次
     pm = next(pm for pm in out["had"]["per_match"] if pm["match_key"] == mk)
     assert pm["brier"]["market"] is not None               # 市场基线对实际结果可打分
+
+
+def test_render_deviation_attribution_lists_factor_source():
+    collected = {
+        "had": {"rows": [{"deviated": True, "v2": 0.2, "market": 0.3}],
+                "per_match": [{"match_key": "M1", "reliability": "中",
+                               "brier": {"v1": None, "v2": 0.2, "market": 0.3},
+                               "deviations": [
+                                   {"outcome": "a", "to": 64.0,
+                                    "factor_source": "韩国大轮换[GNews 2h]"},
+                                   {"outcome": "h", "to": 20.0}]}]},
+        "hhad": {"rows": [], "per_match": []},
+        "ttg": {"rows": [], "per_match": []}}
+    audits = {m: {"n_deviated": 0, "v2_mean": None, "market_mean": None, "delta": None}
+              for m in ("had", "hhad", "ttg")}
+    md = render(collected, audits)
+    assert "**偏离归因**" in md
+    assert "M1: a→64.0% · 韩国大轮换[GNews 2h]" in md
+    assert "M1: h→20.0% · ⚠无因子来源" in md     # 缺 factor_source 暴露失纪律
