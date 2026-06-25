@@ -121,6 +121,14 @@ class Db:
             rows = conn.execute("SELECT * FROM matches ORDER BY ko_bj").fetchall()
             return [dict(r) for r in rows]
 
+    def match(self, zucai_num):
+        """按 zucai_num 取单场(含 home_cn/away_cn);无 → None。"""
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM matches WHERE zucai_num=?", (zucai_num,)
+            ).fetchone()
+            return dict(row) if row else None
+
     # ---------- snapshots ----------
     def save_snapshot(self, match_id, source, payload):
         with self._conn() as conn:

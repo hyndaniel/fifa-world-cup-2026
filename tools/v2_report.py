@@ -53,6 +53,13 @@ def render(collected, audits):
             b = m["brier"]
             lines.append(f"| {m['match_key']} | {m.get('reliability','')} | "
                          f"{_fmt(b.get('v1'))} | {_fmt(b.get('v2'))} | {_fmt(b.get('market'))} |")
+        attrib = [(m["match_key"], d) for m in data["per_match"]
+                  for d in m.get("deviations", [])]
+        if attrib:
+            lines += ["", "**偏离归因**:"]
+            for mk_, d in attrib:
+                fs = d.get("factor_source") or "⚠无因子来源"
+                lines.append(f"- {mk_}: {d.get('outcome')}→{d.get('to')}% · {fs}")
         lines.append("")
     lines += ["_红线:概率预测非投注建议;v2 跑不赢市场就回归市场基线+避雷器。_"]
     return "\n".join(lines)
@@ -91,9 +98,10 @@ def collect(cache_path):
             b = three_way(v1p, v2p, bl["baseline"], actual)
             deviated = bool(((v2rec or {}).get("markets", {}).get(market) or {}).get("deviations"))
             out[market]["rows"].append({"deviated": deviated, "v2": b["v2"], "market": b["market"]})
+            devs = ((v2rec or {}).get("markets", {}).get(market) or {}).get("deviations") or []
             out[market]["per_match"].append({"match_key": mk,
                                              "reliability": (v2rec or {}).get("reliability", ""),
-                                             "brier": b})
+                                             "brier": b, "deviations": devs})
     return out
 
 

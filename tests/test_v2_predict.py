@@ -75,3 +75,22 @@ def test_record_and_get_v2_prediction():
     record_v2_prediction(path, "M1", pred)
     assert get_v2_prediction(path, "M1")["reliability"] == "乱"
     assert get_v2_prediction(path, "NONE") is None
+
+
+def test_factor_source_rides_through_build_and_store(tmp_path):
+    dev = {"outcome": "a", "to": 64.0, "reason": "韩国只需平",
+           "factor_source": "韩国大轮换官宣[GNews 2h]"}
+    pred = build_v2_prediction("M1", "中", [], {
+        "had": {"baseline": {"h": 30.0, "d": 30.0, "a": 40.0}, "deviations": [dev]}})
+    assert pred["markets"]["had"]["deviations"][0]["factor_source"] == "韩国大轮换官宣[GNews 2h]"
+    path = str(tmp_path / "c.db")
+    record_v2_prediction(path, "M1", pred)
+    got = get_v2_prediction(path, "M1")
+    assert got["markets"]["had"]["deviations"][0]["factor_source"] == "韩国大轮换官宣[GNews 2h]"
+
+
+def test_apply_deviations_ignores_extra_factor_source_key():
+    base = {"h": 30.0, "d": 30.0, "a": 40.0}
+    with_fs = apply_deviations(base, [{"outcome": "a", "to": 64.0, "factor_source": "x"}])
+    without = apply_deviations(base, [{"outcome": "a", "to": 64.0}])
+    assert with_fs == without   # 多余键不影响概率结果
