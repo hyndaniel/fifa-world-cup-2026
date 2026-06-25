@@ -200,6 +200,16 @@ def create_app(db_path="wc.db", cfg=None, reports_dir="reports",
         n = db.save_decisions(decisions)
         return {"accepted": True, "n": n, "skipped": total - n}
 
+    # ---------------- /api/ingest/odds ----------------
+    # 本地 refresh_all POST 对齐好的赔率面板 payload(三源现价+变化+分歧), 按 match_key
+    # upsert 存; /api/decisions join 进卡。纯展示, 不进决策/价值计算。
+    @app.post("/api/ingest/odds", dependencies=[Depends(auth_dep)])
+    async def api_ingest_odds(request: Request):
+        body = await request.json()
+        items = (body or {}).get("items") or []
+        n = db.save_odds(items)
+        return {"accepted": True, "n": n, "skipped": len(items) - n}
+
     # ---------------- /api/decisions ----------------
     # 前端"每场决策卡"据此渲染。按 ko_bj 升序 (缺末尾), 附服务端当前北京时间 ts。
     @app.get("/api/decisions", dependencies=[Depends(auth_dep)])
