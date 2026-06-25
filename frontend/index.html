@@ -3,42 +3,68 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="color-scheme" content="dark" />
+  <meta name="color-scheme" content="light dark" />
   <title>WC 价值看板</title>
+
+  <!-- 应用已保存配色 (paint 前, 防闪烁); 默认 newsprint = :root -->
+  <script>
+    try { var t = localStorage.getItem("wc-theme"); if (t && t !== "newsprint") document.documentElement.dataset.theme = t; } catch (e) {}
+  </script>
+
+  <!-- IBM Plex (mono = 数据/标题, sans = 行文); 走则更佳, 被墙则降级到系统等宽, 设计不塌 -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" />
+
   <link rel="stylesheet" href="style.css" />
   <!-- markdown-it CDN (报告 tab 渲染) -->
   <script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js" defer></script>
   <script src="app.js" defer></script>
 </head>
 <body>
-  <!-- 顶栏: 今日场次 + 最近停售倒计时 -->
+  <!-- ===== 顶栏: 仪表读数式 (品牌 / 最近停售 / 同步) ===== -->
   <header class="topbar" id="topbar">
-    <div class="topbar-title">
-      <span class="logo">⚽ WC 价值看板</span>
-      <span class="status-dot" id="conn-dot" title="连接状态"></span>
+    <div class="brand">
+      <span class="brand-dot" id="conn-dot" title="连接状态"></span>
+      <span class="brand-mark">wc<span class="brand-sep">·</span>value</span>
+      <div class="theme-switch" id="theme-switch" role="group" aria-label="配色方案">
+        <button class="sw sw-newsprint" type="button" data-theme="newsprint" title="票面" aria-label="票面"></button>
+        <button class="sw sw-cold-glass" type="button" data-theme="cold-glass" title="冷玻璃" aria-label="冷玻璃"></button>
+        <button class="sw sw-blueprint" type="button" data-theme="blueprint" title="蓝图" aria-label="蓝图"></button>
+        <button class="sw sw-amber" type="button" data-theme="amber" title="琥珀终端" aria-label="琥珀终端"></button>
+      </div>
     </div>
-    <div class="countdown" id="countdown">
-      <div class="cd-label">最近停售</div>
-      <div class="cd-match" id="cd-match">—</div>
-      <div class="cd-timer" id="cd-timer">--:--:--</div>
-      <div class="cd-cutoff" id="cd-cutoff"></div>
+
+    <div class="cutoff" id="countdown">
+      <div class="cutoff-line1">
+        <span class="cutoff-label">最近停售</span>
+        <span class="cutoff-match" id="cd-match">—</span>
+      </div>
+      <div class="cutoff-line2">
+        <span class="cutoff-timer" id="cd-timer">--:--:--</span>
+        <span class="cutoff-at" id="cd-cutoff"></span>
+      </div>
     </div>
-    <div class="updated" id="updated-at">未刷新</div>
+
+    <div class="sync" id="updated-at">未刷新</div>
   </header>
 
-  <!-- tab 导航 -->
-  <nav class="tabs" id="tabs">
-    <button class="tab-btn active" data-tab="decisions">决策</button>
-    <button class="tab-btn" data-tab="dashboard">看板</button>
-    <button class="tab-btn" data-tab="reports">📄 报告</button>
+  <!-- ===== 段式仪表切换 ===== -->
+  <nav class="tabs" id="tabs" role="tablist">
+    <button class="tab-btn active" data-tab="decisions" role="tab">决策</button>
+    <button class="tab-btn" data-tab="dashboard" role="tab">看板</button>
+    <button class="tab-btn" data-tab="reports" role="tab">报告</button>
   </nav>
 
   <main>
-    <!-- ===== 决策视图 (新 hero: 每场决策卡) ===== -->
-    <section id="view-decisions" class="view active">
+    <!-- ===== 决策视图 (hero: 每场决策卡, 以公允轴为脊) ===== -->
+    <section id="view-decisions" class="view active" role="tabpanel">
       <section class="panel" id="panel-decisions">
-        <h2 class="panel-h">🎯 今日决策卡</h2>
-        <div class="panel-sub">按开球时间排序 · 每场一卡: v1 比分 / v2 概率+靠谱度+剧本 / 价值结论 · 点开看完整盘口明细</div>
+        <div class="panel-head">
+          <span class="eyebrow">decision · 今日决策卡</span>
+          <h2 class="panel-h">该不该碰 · 哪条最不亏</h2>
+        </div>
+        <p class="panel-sub">按开球排序 · 一场一卡 · 公允轴上每条腿的去水价值落点 · 点价值块看完整盘口</p>
         <div id="decision-list" class="decision-list">
           <div class="empty">加载中…</div>
         </div>
@@ -46,57 +72,80 @@
     </section>
 
     <!-- ===== 看板视图 ===== -->
-    <section id="view-dashboard" class="view">
+    <section id="view-dashboard" class="view" role="tabpanel">
 
-      <!-- 🎯 价值雷达 -->
+      <!-- 价值雷达 -->
       <section class="panel" id="panel-radar">
-        <div class="panel-h-row">
-          <h2 class="panel-h">🎯 价值雷达</h2>
-          <button class="btn btn-refresh" id="radar-refresh" type="button" title="重抓足彩快照 + 刷新 Poly 去水, 治陈旧假黄档">🔄 重抓+刷新</button>
+        <div class="panel-head panel-head-row">
+          <div>
+            <span class="eyebrow">radar · 价值雷达</span>
+            <h2 class="panel-h">公允轴上的全部投点</h2>
+          </div>
+          <button class="btn btn-refresh" id="radar-refresh" type="button" title="重抓足彩快照 + 刷新 Poly 去水, 治陈旧假黄档">重抓 · 刷新</button>
         </div>
-        <div class="panel-sub">所有可投点按 EV 排序 · 🟢 真 +EV · 🟡 接近公允(噪声内) · 每行直接对比足彩隐含 vs Poly 去水, 点开看完整明细</div>
-        <div class="radar-head">
-          <span class="rh-match">对阵 / 盘口</span>
-          <span class="rh-odds">足彩</span>
-          <span class="rh-val rh-raw">生value</span>
-          <span class="rh-val rh-devig">去水value</span>
+        <p class="panel-sub">按去水 EV 降序 · 落点越靠右越有边 · 左为足彩隐含、右为 Poly 去水、中线为公允</p>
+
+        <!-- 公允轴图例 (一次性说明信号语言) -->
+        <div class="axis-legend">
+          <span class="axis-legend-scale">
+            <span class="al-end al-left">-EV</span>
+            <span class="al-axis">
+              <span class="al-zone al-zone-bleed"></span>
+              <span class="al-zone al-zone-fair"></span>
+              <span class="al-zone al-zone-edge"></span>
+              <span class="al-mid"></span>
+            </span>
+            <span class="al-end al-right">+EV</span>
+          </span>
+          <span class="axis-legend-keys">
+            <span class="alk"><i class="dot dot-edge"></i>真 +EV ≥1.03</span>
+            <span class="alk"><i class="dot dot-fair"></i>接近公允</span>
+            <span class="alk"><i class="dot dot-bleed"></i>明显 -EV</span>
+          </span>
         </div>
+
         <div id="radar-list" class="radar-list">
           <div class="empty">加载中…</div>
         </div>
       </section>
 
-      <!-- ⭐ 特别关注 -->
+      <!-- 特别关注 -->
       <section class="panel" id="panel-watch">
-        <h2 class="panel-h">⭐ 特别关注</h2>
+        <div class="panel-head">
+          <span class="eyebrow">watch · 特别关注</span>
+          <h2 class="panel-h">盯队 / 盯场 / 盯人</h2>
+        </div>
         <form class="watch-add" id="watch-add">
           <select id="watch-kind" aria-label="关注类型">
             <option value="team">队</option>
             <option value="match">场</option>
             <option value="player">人</option>
           </select>
-          <input id="watch-key" type="text" placeholder="如 西班牙 / 西班牙 vs 佛得角 / 姆巴佩" />
-          <button type="submit" class="btn btn-pin">📌 关注</button>
+          <input id="watch-key" type="text" placeholder="西班牙 / 西班牙 vs 佛得角 / 姆巴佩" />
+          <button type="submit" class="btn btn-primary">关注</button>
         </form>
         <div id="watch-list" class="watch-list">
           <div class="empty">—</div>
         </div>
       </section>
 
-      <!-- 📒 账本 (A/B 分列) -->
+      <!-- 账本 (A 价值单关 / B 清醒彩票) -->
       <section class="panel" id="panel-ledger">
-        <h2 class="panel-h">📒 账本</h2>
+        <div class="panel-head">
+          <span class="eyebrow">ledger · 账本</span>
+          <h2 class="panel-h">守下限 · 不上头</h2>
+        </div>
         <div class="ledger-grid">
           <div class="wallet wallet-a" id="wallet-a">
-            <div class="wallet-h">A · 价值单关</div>
+            <div class="wallet-h"><span class="wallet-id">A</span>价值单关</div>
             <div class="wallet-rows" id="wallet-a-rows"></div>
           </div>
           <div class="wallet wallet-b" id="wallet-b">
-            <div class="wallet-h">B · 清醒彩票</div>
+            <div class="wallet-h"><span class="wallet-id">B</span>清醒彩票</div>
             <div class="wallet-rows" id="wallet-b-rows"></div>
           </div>
         </div>
-        <button class="btn btn-add-bet" id="open-bet-form" type="button">＋ 记一笔</button>
+        <button class="btn btn-block" id="open-bet-form" type="button">＋ 记一笔</button>
         <form class="bet-form" id="bet-form" hidden>
           <div class="bet-row">
             <label>钱包
@@ -128,9 +177,12 @@
     </section>
 
     <!-- ===== 报告视图 ===== -->
-    <section id="view-reports" class="view">
+    <section id="view-reports" class="view" role="tabpanel">
       <section class="panel" id="panel-reports">
-        <h2 class="panel-h">📄 报告 / 预测</h2>
+        <div class="panel-head">
+          <span class="eyebrow">reports · 报告 / 预测</span>
+          <h2 class="panel-h">原始情报与跑分</h2>
+        </div>
         <div class="report-tabs" id="report-tabs">
           <div class="empty">加载报告列表…</div>
         </div>
@@ -142,7 +194,8 @@
   </main>
 
   <footer class="footer">
-    诚实定位: 足彩长期 -EV, 本看板只帮你打平/薄赚/守下限/不上头, 不构成投资建议。
+    <span class="footer-stamp">honest line</span>
+    <span>足彩长期 -EV。本看板只帮你打平 / 薄赚 / 守下限 / 不上头，不构成投资建议。</span>
   </footer>
 </body>
 </html>
