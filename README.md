@@ -17,47 +17,31 @@
 四个角色:**deepsearch 情报层** = 粮草(只供料、不下结论);**v1 比分 / v2 概率 / 价值** = 三个互相隔离的脑。同一份料喂三脑、各产一份结论 → join 成**决策卡** → 推手机看板。三脑独立,所以"撞车=可信、分歧=警报"。
 
 ```mermaid
-%%{init: {"theme":"base","themeVariables":{"fontFamily":"PingFang SC,Microsoft YaHei,-apple-system,Segoe UI,Arial,sans-serif","fontSize":"14px","lineColor":"#94a3b8","clusterBkg":"#fbfcfe","clusterBorder":"#cbd5e1"}}}%%
-flowchart LR
+flowchart TB
     subgraph SRC["情报与行情 · 随时间变"]
         DS["deep-research<br/>中立情报原文"]
-        ODDS["竞彩 · 欧盘共识<br/>Polymarket 去水"]
+        ODDS["竞彩 · 欧盘共识 · Polymarket去水"]
     end
 
-    subgraph STORE["数据存储"]
-        ENRICH[("wc.db<br/>enrich 事实卡")]
-        CACHE[("odds_cache.db<br/>带时间戳")]
-    end
+    DS -->|"save_intel.py 只挑确证事实"| ENRICH["wc.db · enrich 事实卡"]
+    ODDS --> CACHE["odds_cache.db · 带时间戳"]
 
-    subgraph BRAINS["🧠 三脑 · 独立 subagent · v1 ⊥ v2 互不可见"]
+    subgraph BRAINS["三脑 · 独立 subagent · v1 与 v2 互不可见"]
         V1["v1 比分脑"]
         V2["v2 概率脑"]
         VAL["价值脑"]
     end
 
-    DS -->|"save_intel.py 抽确证事实"| ENRICH
-    ODDS --> CACHE
-    DS -.->|"读原文"| V1
-    DS -.->|"读原文"| VAL
-    ENRICH -->|"match_fact_card"| V2
+    DS -.->|读原文| V1
+    DS -.->|读原文| VAL
+    ENRICH -->|"match_fact_card 事实卡"| V2
     CACHE -->|"baseline_market 基线"| V2
     CACHE --> VAL
-    V1 --> JOIN{{"跨库 join<br/>→ Decision"}}
+
+    V1 --> JOIN["跨库 join → Decision"]
     V2 --> JOIN
     VAL --> JOIN
-    JOIN ==>|"POST /api/ingest/predictions"| DASH(["📱 HK 看板<br/>手机决策卡"])
-
-    classDef src fill:#f8fafc,stroke:#94a3b8,stroke-width:1px,color:#334155;
-    classDef store fill:#fffbeb,stroke:#f59e0b,stroke-width:1.2px,color:#92400e;
-    classDef brain fill:#eef2ff,stroke:#6366f1,stroke-width:1.4px,color:#3730a3;
-    classDef join fill:#ecfeff,stroke:#06b6d4,stroke-width:1.4px,color:#155e75;
-    classDef out fill:#dcfce7,stroke:#22c55e,stroke-width:1.4px,color:#166534;
-
-    class DS,ODDS src
-    class ENRICH,CACHE store
-    class V1,V2,VAL brain
-    class JOIN join
-    class DASH out
+    JOIN -->|"POST /api/ingest/predictions"| DASH["HK 看板 · 手机决策卡"]
 ```
 
 - 🔴 **红线**:v1 与 v2 预测时互不可见，否则三方 Brier 跑分(v1/v2/市场基线)失真
