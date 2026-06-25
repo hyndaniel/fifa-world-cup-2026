@@ -299,6 +299,8 @@ git commit -m "feat(v2): baseline_market + 让球(竞彩单源软锚)+ 让球结
   - `over_under(dist: dict, lines=(2.5,)) -> dict`(`{"2.5":{"over":%,"under":%}}`)
   - `_ttg_outcome(home_goals, away_goals, cap=7) -> str`("0".."7")
   - `get_result_goals(cache_path, match_key) -> (home, away) | None`
+  - `MARKETS`(有序元组 `(("had",HAD_CFG),("hhad",HHAD_CFG),("ttg",TTG_CFG))`,供报告/回测共用)
+  - `_actual_for(market, hg, ag, line=None) -> str|None`(逐盘口实际结果派生,单点真相,报告/回测都 import 它,**不各自重写**)
 
 - [ ] **Step 1: Write failing tests**
 
@@ -348,6 +350,14 @@ def test_get_result_goals_roundtrip():
     record_result(path, "周三053", 2, 1)
     assert get_result_goals(path, "周三053") == (2, 1)
     assert get_result_goals(path, "缺") is None
+
+
+def test_actual_for_dispatches_by_market():
+    from backend.baseline import _actual_for
+    assert _actual_for("had", 2, 0, None) == "h"
+    assert _actual_for("hhad", 1, 0, -1) == "d"     # 主让一球 1-0 → 走盘
+    assert _actual_for("hhad", 2, 0, None) is None  # 让球缺 line → None(不计分)
+    assert _actual_for("ttg", 2, 1) == "3"          # line 省略默认 None
 ```
 
 - [ ] **Step 2: Run to verify fail**
@@ -387,6 +397,21 @@ def get_result_goals(cache_path: str, match_key: str):
     finally:
         conn.close()
     return (r[0], r[1]) if r else None
+
+
+# 盘口注册表 + 实际结果派生(报告/回测共用单点真相, 避免各自重写)
+MARKETS = (("had", HAD_CFG), ("hhad", HHAD_CFG), ("ttg", TTG_CFG))
+
+
+def _actual_for(market, hg, ag, line=None):
+    """按盘口把实际进球派生成该盘口 actual 键。让球缺 line → None(不计分)。"""
+    if market == "had":
+        return _outcome_key(hg, ag)
+    if market == "hhad":
+        return _hhad_outcome(hg, ag, line) if line is not None else None
+    if market == "ttg":
+        return _ttg_outcome(hg, ag)
+    return None
 ```
 
 - [ ] **Step 4: Run to verify pass**
@@ -560,7 +585,7 @@ git commit -m "feat(v2): build_v2_prediction 产按盘口分组(had/hhad/ttg+大
 - Test: `tests/test_v2_report.py`(迁移既有 render 测试)
 
 **Interfaces:**
-- Consumes: `baseline_market`/`HAD_CFG`/`HHAD_CFG`/`TTG_CFG`/`_hhad_outcome`/`_ttg_outcome`/`get_result_goals`(Task 2/3);`_outcome_key`(既有);`three_way`/`aggregate`/`deviation_audit`(既有,泛型);`get_v2_prediction`/`get_v1`(既有);`_fmt`/`_result_keys`(既有)。
+- Consumes: `baseline_market`/`MARKETS`/`_actual_for`/`get_result_goals`(Task 2/3);`three_way`/`aggregate`/`deviation_audit`(既有,泛型);`get_v2_prediction`/`get_v1`(既有);`_fmt`/`_result_keys`(既有)。
 - Produces:
   - `collect(cache_path) -> {market: {"rows":[...], "per_match":[...]}}`
   - `render(collected, audits) -> str`(按盘口分节)
@@ -606,25 +631,12 @@ Expected: FAIL —`render()` 旧签名是 `(agg, audit, per_match)`,新测试传
 把 `tools/v2_report.py` 中 import 区、`render`、`collect`、`main` 替换/扩充如下(`_fmt`、`_result_keys` 保留):
 
 ```python
-from backend.scoring import brier_multi  # noqa: E402  (保留)
 from backend.scorecard import aggregate, deviation_audit, three_way  # noqa: E402
-from backend.baseline import (baseline_market, HAD_CFG, HHAD_CFG, TTG_CFG,  # noqa: E402
-                              _outcome_key, _hhad_outcome, _ttg_outcome, get_result_goals)
+from backend.baseline import baseline_market, MARKETS, get_result_goals, _actual_for  # noqa: E402
 from backend.v2_predict import get_v2_prediction  # noqa: E402
 from backend.v1_log import get_v1  # noqa: E402
 
-MARKETS = [("had", HAD_CFG), ("hhad", HHAD_CFG), ("ttg", TTG_CFG)]
 MARKET_NAMES = {"had": "胜平负", "hhad": "让球", "ttg": "总进球/大小球"}
-
-
-def _actual_for(market, hg, ag, line):
-    if market == "had":
-        return _outcome_key(hg, ag)
-    if market == "hhad":
-        return _hhad_outcome(hg, ag, line) if line is not None else None
-    if market == "ttg":
-        return _ttg_outcome(hg, ag)
-    return None
 
 
 def collect(cache_path):
@@ -719,7 +731,7 @@ git commit -m "feat(v2): 跑分卡逐盘口打分 + 按盘口分节渲染"
 - Test: `tests/test_backtest_baseline.py`
 
 **Interfaces:**
-- Consumes: `baseline_market`/`HAD_CFG`/`HHAD_CFG`/`TTG_CFG`/`_hhad_outcome`/`_ttg_outcome`/`get_result_goals`/`_outcome_key`(Task 2/3);`brier_multi`(既有)。
+- Consumes: `baseline_market`/`MARKETS`/`_actual_for`/`get_result_goals`(Task 2/3);`brier_multi`(既有)。
 - Produces: `run_backtest(cache_path) -> {market: {"n", "market_brier", "per_match"}}`。
 
 - [ ] **Step 1: 迁移既有测试 + 写新失败测试**
@@ -774,22 +786,10 @@ Expected: FAIL —`KeyError: 'had'`(旧 `run_backtest` 返回平铺 `{"n","marke
 替换 `tools/backtest_baseline.py` 的 import 区、`run_backtest`、`main`(`_result_keys`、`DEFAULT_CACHE` 保留):
 
 ```python
-from backend.baseline import (baseline_market, HAD_CFG, HHAD_CFG, TTG_CFG,  # noqa: E402
-                              _outcome_key, _hhad_outcome, _ttg_outcome, get_result_goals)
+from backend.baseline import baseline_market, MARKETS, get_result_goals, _actual_for  # noqa: E402
 from backend.scoring import brier_multi  # noqa: E402
 
-MARKETS = [("had", HAD_CFG), ("hhad", HHAD_CFG), ("ttg", TTG_CFG)]
 MARKET_NAMES = {"had": "胜平负", "hhad": "让球", "ttg": "总进球"}
-
-
-def _actual_for(market, hg, ag, line):
-    if market == "had":
-        return _outcome_key(hg, ag)
-    if market == "hhad":
-        return _hhad_outcome(hg, ag, line) if line is not None else None
-    if market == "ttg":
-        return _ttg_outcome(hg, ag)
-    return None
 
 
 def run_backtest(cache_path: str) -> dict:
