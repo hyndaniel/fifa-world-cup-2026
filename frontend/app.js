@@ -351,6 +351,17 @@ function buildDecisionCard(d) {
   if (d.v2 && (d.v2.probs || d.v2.reliability || (Array.isArray(d.v2.scenarios) && d.v2.scenarios.length))) {
     if (d.v2.probs) {
       const p = d.v2.probs;
+      const hh = Number(p.h) || 0, dd = Number(p.d) || 0, aa = Number(p.a) || 0;
+      const tot = hh + dd + aa || 1;
+      // 概率条: 三段堆叠, 宽度 ∝ 胜/平/负 → 即时可读 (色彩不单独承载语义, 旁附文字标签)
+      const bar = el("div", "dc-probbar");
+      bar.setAttribute("role", "img");
+      bar.setAttribute("aria-label", `v2 概率 胜 ${fmtPct(hh, 0)} 平 ${fmtPct(dd, 0)} 负 ${fmtPct(aa, 0)}`);
+      const seg = (cls, w) => { const s = el("span", `dc-seg ${cls}`); s.style.width = (w / tot * 100) + "%"; return s; };
+      bar.appendChild(seg("dc-seg-h", hh));
+      bar.appendChild(seg("dc-seg-d", dd));
+      bar.appendChild(seg("dc-seg-a", aa));
+      v2Block.appendChild(bar);
       const probs = el("span", "dc-v2-probs");
       probs.appendChild(el("span", "dc-prob dc-prob-h", `胜 ${fmtPct(p.h, 0)}`));
       probs.appendChild(el("span", "dc-prob dc-prob-d", `平 ${fmtPct(p.d, 0)}`));
@@ -404,12 +415,21 @@ function buildDecisionCard(d) {
       card.appendChild(detail);
 
       valBlock.classList.add("dc-expandable");
+      valBlock.setAttribute("role", "button");
+      valBlock.setAttribute("tabindex", "0");
+      valBlock.setAttribute("aria-expanded", "false");
+      valBlock.setAttribute("aria-label", "展开/收起完整盘口明细");
       const hint = el("span", "dc-expand-hint", "▾ 明细");
       valBlock.appendChild(hint);
-      valBlock.addEventListener("click", () => {
+      const toggle = () => {
         detail.hidden = !detail.hidden;
         card.classList.toggle("open", !detail.hidden);
         hint.textContent = detail.hidden ? "▾ 明细" : "▴ 收起";
+        valBlock.setAttribute("aria-expanded", String(!detail.hidden));
+      };
+      valBlock.addEventListener("click", toggle);
+      valBlock.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
       });
     }
   } else {
