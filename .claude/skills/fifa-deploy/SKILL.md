@@ -29,7 +29,7 @@ cd /opt/github/fifa-world-cup-2026
 sudo git fetch origin --tags
 sudo git reset --hard fifa-deploy/<当天日期>-<N>     # host 文件 = docker build 上下文
 sudo git describe --tags                              # 确认 == 该 tag
-sudo python3 tools/gen_report_times.py                # 按 git 提交时间刷新报告时间清单(治 git reset 抹平 mtime → 容器内报告列表全同一时刻/乱序); reports/ 是 bind-mount, 改完即生效
+sudo python3 tools/gen_report_times.py || true        # 按 git 提交时间刷新报告时间清单(治 git reset 抹平 mtime → 报告列表全同一时刻/乱序); reports/ 是 bind-mount 改完即生效; || true 防缺 python3/出错阻断后续部署(报告序非致命, 可补跑)
 sudo docker compose build                             # 把新代码烤进镜像
 sudo docker compose up -d                             # recreate 容器(network_mode:host → 几秒 downtime)
 ```
