@@ -1076,6 +1076,10 @@ main {
   gap: 5px;
   padding: 4px 0 2px;
 }
+/* hidden 属性需显式压过 display:flex, 否则收起无效 (默认折叠, 点价值块展开) */
+.dc-legs[hidden] {
+  display: none;
+}
 .dc-leg {
   display: flex;
   align-items: baseline;
