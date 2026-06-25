@@ -87,3 +87,12 @@ def test_enrich_save_latest_replace(tmp_path):
     got3 = db.latest_enrich("西班牙")
     assert got3["lineup"] is None
     assert got3["news"] == news
+
+
+def test_match_getter_hit_and_miss(tmp_path):
+    db = Db(str(tmp_path / "wc.db")); db.init()
+    db.upsert_match("周四055", "南非", "韩国", "South Africa", "Korea Republic",
+                    None, "23:00", "22:45", "Selling")
+    m = db.match("周四055")
+    assert m is not None and m["home_cn"] == "南非" and m["away_cn"] == "韩国"
+    assert db.match("无此场") is None
