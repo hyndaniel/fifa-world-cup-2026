@@ -28,6 +28,15 @@ def test_apply_multi_deviation_honors_all_pins():
     assert abs(out["d"] - 20.0) < 0.01   # 剩余 100-50-30 全归未钉的 d
 
 
+def test_apply_deviations_ttg_multikey_sum_100():
+    base = {"0": 10.0, "1": 20.0, "2": 30.0, "3": 25.0, "4": 15.0}
+    out = apply_deviations(base, [{"outcome": "3", "to": 35.0, "reason": "r"}],
+                           keys=tuple(base))
+    assert abs(sum(out.values()) - 100.0) < 0.01
+    assert abs(out["3"] - 35.0) < 0.6   # 钉住 35(归一后±四舍五入)
+    assert set(out) == set(base)
+
+
 def test_build_v2_prediction_shape():
     sheet = {"match_key": "M1", "baseline": {"h": 30.0, "d": 30.0, "a": 40.0}}
     out = build_v2_prediction(sheet, [{"outcome": "a", "to": 64.0, "reason": "r"}], "乱",
