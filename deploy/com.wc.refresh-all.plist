@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  本地定时刷三源(竞彩 sporttery + 欧盘 500 + Poly 7897代理)→ 推 HK 看板。
+  取代旧的 com.wc.collect-zucai(它只推竞彩 raw)。
+  装之前: 把 REPO 改成本机仓库绝对路径, __看板密码__ 改成真实密码。
+-->
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.wc.refresh-all</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>REPO/tools/refresh_all.py</string>
+    <string>--once</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>WC_INGEST_URL</key><string>http://18.166.71.60:8000</string>
+    <key>WC_INGEST_PW</key><string>__看板密码__</string>
+    <key>WC_HTTPS_PROXY</key><string>http://127.0.0.1:7897</string>
+  </dict>
+  <key>StartInterval</key><integer>300</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardErrorPath</key><string>/tmp/wc-refresh-all.err</string>
+  <key>StandardOutPath</key><string>/tmp/wc-refresh-all.out</string>
+</dict></plist>

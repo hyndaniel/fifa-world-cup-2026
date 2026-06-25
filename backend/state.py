@@ -95,11 +95,13 @@ def ko_status(ko_bj, now_bj, decay_h=DECAY_H):
     return ("expired", dt)
 
 
-def decisions_view(decisions, now_bj, decay_h=DECAY_H):
-    """筛掉 expired 的场, 每条附 view_status, 按开球时刻升序(unknown 末尾)。
+def decisions_view(decisions, now_bj, odds_map=None, decay_h=DECAY_H):
+    """筛掉 expired 的场, 每条附 view_status + odds(按 match_key join), 按开球时刻升序。
 
-    输入是 db.get_decisions() 的全量 Decision dict 列表; 返回过滤+标注后的浅拷贝列表。
+    输入是 db.get_decisions() 的全量 Decision dict 列表; odds_map={match_key: 赔率面板 payload}
+    (db.get_odds()); 无对应赔率的卡 odds=None。返回过滤+标注后的浅拷贝列表。
     """
+    odds_map = odds_map or {}
     out = []
     for d in decisions or []:
         if not isinstance(d, dict):
@@ -107,7 +109,7 @@ def decisions_view(decisions, now_bj, decay_h=DECAY_H):
         status, dt = ko_status(d.get("ko_bj"), now_bj, decay_h)
         if status == "expired":
             continue
-        out.append((dt, {**d, "view_status": status}))
+        out.append((dt, {**d, "view_status": status, "odds": odds_map.get(d.get("match_key"))}))
     out.sort(key=lambda t: (t[0] is None, t[0] or now_bj))
     return [d for _dt, d in out]
 

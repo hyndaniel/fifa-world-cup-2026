@@ -77,6 +77,11 @@ CREATE TABLE IF NOT EXISTS decisions (
     ts TEXT,
     payload_json TEXT
 );
+CREATE TABLE IF NOT EXISTS odds (
+    match_key TEXT PRIMARY KEY,
+    ts TEXT,
+    payload_json TEXT
+);
 """
 
 
@@ -343,6 +348,38 @@ class Db:
             except (TypeError, ValueError):
                 continue
         out.sort(key=lambda d: (not (d.get("ko_bj")), d.get("ko_bj") or ""))
+        return out
+
+    def save_odds(self, items):
+        """逐条按 match_key upsert 赔率面板 payload(替换语义); 缺 match_key 跳过; 返回写入数。"""
+        ts = _now_bj()
+        n = 0
+        with self._conn() as conn:
+            for it in items or []:
+                if not isinstance(it, dict):
+                    continue
+                mk = it.get("match_key")
+                if not mk:
+                    continue
+                conn.execute(
+                    """INSERT INTO odds (match_key, ts, payload_json) VALUES (?,?,?)
+                       ON CONFLICT(match_key) DO UPDATE SET
+                         ts=excluded.ts, payload_json=excluded.payload_json""",
+                    (mk, ts, json.dumps(it, ensure_ascii=False)),
+                )
+                n += 1
+        return n
+
+    def get_odds(self):
+        """返回 {match_key: payload_dict}; 损坏行跳过。供 decisions_view join。"""
+        with self._conn() as conn:
+            rows = conn.execute("SELECT match_key, payload_json FROM odds").fetchall()
+        out = {}
+        for r in rows:
+            try:
+                out[r["match_key"]] = json.loads(r["payload_json"])
+            except (TypeError, ValueError):
+                continue
         return out
 
     def latest_snapshot(self, source):

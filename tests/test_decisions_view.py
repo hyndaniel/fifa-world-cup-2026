@@ -69,3 +69,17 @@ def test_decisions_view_unknown_sorts_last():
     out = decisions_view([_d("Z", "待定"), _d("C", "6.27 02:00")], NOW)
     assert [d["match_key"] for d in out] == ["C", "Z"]
     assert out[-1]["view_status"] == "unknown"
+
+
+def test_decisions_view_joins_odds():
+    now = datetime(2026, 6, 26, 9, 0, tzinfo=BJ)
+    decs = [{"match_key": "周四055", "ko_bj": "6.26 23:30"}]
+    odds_map = {"周四055": {"sources": {"zucai": {"had": {"h": 2.7}}}}}
+    out = decisions_view(decs, now, odds_map=odds_map)
+    assert out[0]["odds"]["sources"]["zucai"]["had"]["h"] == 2.7
+
+
+def test_decisions_view_odds_none_when_absent():
+    now = datetime(2026, 6, 26, 9, 0, tzinfo=BJ)
+    out = decisions_view([{"match_key": "周四099", "ko_bj": "6.26 23:30"}], now, odds_map={})
+    assert out[0]["odds"] is None
