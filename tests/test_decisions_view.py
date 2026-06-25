@@ -37,6 +37,13 @@ def test_ko_status_unknown():
     assert ko_status("待定", NOW) == ("unknown", None)
 
 
+def test_ko_status_accepts_naive_now():
+    """朴素 datetime(无 tzinfo)当北京时间处理, 不抛 aware/naive 比较错。"""
+    naive = datetime(2026, 6, 26, 23, 0)  # 无 tzinfo
+    assert ko_status("6.26 23:30", naive)[0] == "upcoming"
+    assert ko_status("6.26 16:00", naive)[0] == "expired"
+
+
 def _d(mk, ko):
     return {"match_key": mk, "ko_bj": ko, "status": "Selling"}
 

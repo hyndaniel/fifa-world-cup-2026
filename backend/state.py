@@ -7,7 +7,8 @@ build_state(db, cfg, now_bj) -> dict:
   - watchlist:   各 pin 项 (队/场/人) 富化: 关联场次 matches + 阵容 lineup + 新闻 news
                  + 雷达命中 radar_hits (该项关联场次里 green/yellow 的 value_points 精简)。
   - ledger:      来自 db.ledger()。
-  - matches_today: 今日 (now_bj 同日) 的场次精简列表。
+  - matches_today: 未过期 (开球时刻在 now_bj −DECAY_H 窗内) 的场次精简列表, 按开球升序,
+                 每项带 view_status (upcoming/recent/unknown)。名 today 因 DB 只存当日盘口。
 
 形状对照计划 §契约:
 {
@@ -82,6 +83,8 @@ def ko_status(ko_bj, now_bj, decay_h=DECAY_H):
     """返回 (状态, dt|None)。
     upcoming: 还没开球; recent: 已开球但在 decay_h 小时内; expired: 超过; unknown: 解析不出。
     """
+    if now_bj.tzinfo is None:  # 容错: 朴素 datetime 视为北京时间, 避免 aware/naive 比较 TypeError
+        now_bj = now_bj.replace(tzinfo=BJ)
     dt = parse_ko_dt(ko_bj, now_bj)
     if dt is None:
         return ("unknown", None)
