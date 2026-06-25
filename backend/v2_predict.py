@@ -27,16 +27,24 @@ def apply_deviations(baseline: dict, deviations: list, keys=_KEYS) -> dict:
     return {k: round(cur[k] / tot * 100, 1) for k in keys} if tot else cur
 
 
-def build_v2_prediction(baseline_sheet, deviations, reliability, scenarios):
-    base = baseline_sheet["baseline"]
-    return {
-        "match_key": baseline_sheet.get("match_key"),
-        "baseline": dict(base),
-        "v2": apply_deviations(base, deviations or []),
-        "deviations": deviations or [],
-        "reliability": reliability,
-        "scenarios": scenarios or [],
-    }
+def build_v2_prediction(match_key, reliability, scenarios, markets_in):
+    """按盘口装配 v2 预测。markets_in: {market: {baseline, deviations[, line]}}。
+    每盘口产 {baseline, v2(应用偏离), deviations[, line][, ou(仅 ttg)]}。"""
+    from .baseline import over_under
+    markets = {}
+    for m, mi in markets_in.items():
+        base = mi["baseline"]
+        keys = tuple(base)
+        entry = {"baseline": dict(base),
+                 "v2": apply_deviations(base, mi.get("deviations") or [], keys=keys),
+                 "deviations": mi.get("deviations") or []}
+        if "line" in mi:
+            entry["line"] = mi["line"]
+        if m == "ttg":
+            entry["ou"] = over_under(entry["v2"], lines=(2.5,))
+        markets[m] = entry
+    return {"match_key": match_key, "reliability": reliability,
+            "scenarios": scenarios or [], "markets": markets}
 
 
 _V2_SCHEMA = """CREATE TABLE IF NOT EXISTS v2_predictions (

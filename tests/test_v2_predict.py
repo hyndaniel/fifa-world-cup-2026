@@ -37,15 +37,21 @@ def test_apply_deviations_ttg_multikey_sum_100():
     assert set(out) == set(base)
 
 
-def test_build_v2_prediction_shape():
-    sheet = {"match_key": "M1", "baseline": {"h": 30.0, "d": 30.0, "a": 40.0}}
-    out = build_v2_prediction(sheet, [{"outcome": "a", "to": 64.0, "reason": "r"}], "乱",
-                              ["默契平"])
-    assert out["match_key"] == "M1"
-    assert out["reliability"] == "乱"
+def test_build_v2_prediction_markets_shape():
+    out = build_v2_prediction("M1", "乱", ["默契平"], {
+        "had": {"baseline": {"h": 30.0, "d": 30.0, "a": 40.0},
+                "deviations": [{"outcome": "a", "to": 64.0, "reason": "韩国只需平"}]},
+        "hhad": {"baseline": {"h": 40.0, "d": 30.0, "a": 30.0}, "deviations": [], "line": -1},
+        "ttg": {"baseline": {"0": 20.0, "1": 30.0, "2": 30.0, "3": 20.0}, "deviations": []}})
+    assert out["match_key"] == "M1" and out["reliability"] == "乱"
     assert out["scenarios"] == ["默契平"]
-    assert abs(sum(out["v2"].values()) - 100.0) < 0.01
-    assert out["baseline"] == {"h": 30.0, "d": 30.0, "a": 40.0}  # 基线原值留存
+    had = out["markets"]["had"]
+    assert had["baseline"] == {"h": 30.0, "d": 30.0, "a": 40.0}   # 基线原值留存
+    assert abs(sum(had["v2"].values()) - 100.0) < 0.01 and had["v2"]["a"] > had["v2"]["h"]
+    assert out["markets"]["hhad"]["line"] == -1
+    ttg = out["markets"]["ttg"]
+    assert "ou" in ttg and "2.5" in ttg["ou"]
+    assert abs(ttg["ou"]["2.5"]["over"] - 20.0) < 0.6            # 仅 P(3)=20
 
 
 def test_record_and_get_v2_prediction():
