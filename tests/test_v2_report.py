@@ -1,5 +1,12 @@
 # tests/test_v2_report.py
-from tools.v2_report import render
+import json
+import os
+import sqlite3
+import tempfile
+
+from backend.baseline import HAD_CFG, baseline_market, record_result
+from backend.v2_predict import build_v2_prediction, record_v2_prediction
+from tools.v2_report import collect, render
 
 
 def _collected_one_market():
@@ -22,3 +29,31 @@ def test_render_sections_per_market_and_2dp():
     assert "| M1 | 乱 | — | 0.12 | 0.36 |" in md     # 2dp + 缺失为 —(v1 仅 had 也可能缺)
     assert "0.1234" not in md
     assert "拉低" in md or "-0.06" in md
+
+
+def test_collect_smoke_db_assembles_per_market():
+    # 真集成冒烟(无 mock):播种 odds_cache + match_results + v2 预测 → collect 逐盘口装配。
+    d = tempfile.mkdtemp()
+    db = os.path.join(d, "c.db")
+    mk = "周三053"
+    conn = sqlite3.connect(db)
+    conn.execute("""CREATE TABLE odds_cache (id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts TEXT, source TEXT, match_key TEXT, label TEXT, ko TEXT, payload_json TEXT)""")
+    conn.execute("INSERT INTO odds_cache(ts,source,match_key,label,ko,payload_json) "
+                 "VALUES (?,?,?,?,?,?)",
+                 ("2026-06-25T09:00:00+08:00", "zucai", mk, "南非 vs 韩国", "ko",
+                  json.dumps({"had": {"h": 6.00, "d": 3.87, "a": 1.44}})))
+    conn.commit()
+    conn.close()
+    record_result(db, mk, 0, 1)  # 客胜(韩国) → had actual = "a"
+    bl = baseline_market(db, mk, HAD_CFG)        # had 基线由 DB 装配(非手搓)
+    pred = build_v2_prediction(mk, "乱", [],
+                               {"had": {"baseline": bl["baseline"], "deviations": []}})
+    record_v2_prediction(db, mk, pred)
+
+    out = collect(db)
+    assert set(out) == {"had", "hhad", "ttg"}              # 三盘口键都在
+    keys = [pm["match_key"] for pm in out["had"]["per_match"]]
+    assert mk in keys                                       # had 含已播种场次
+    pm = next(pm for pm in out["had"]["per_match"] if pm["match_key"] == mk)
+    assert pm["brier"]["market"] is not None               # 市场基线对实际结果可打分
