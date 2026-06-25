@@ -56,11 +56,13 @@ CST = ET + 12/13。判断"今晚/明天/是否已开赛"**必须看 ET 当下**,
    - 报告里每场都标了 `Xpm ET(= 北京 M.D HH:MM)`。用 ET 当下 + 报告进度,选出
      **尚未落预测、且开球在 ET 今日(或紧邻次日)的场次**。
    - 同组末轮两场同时开球——一起算。
-4. 把判定结果(场次清单 + 各场 `match_key`,形如 `"南非 vs 韩国"`,**主队在前**)念给用户确认,
+4. 把判定结果(场次清单 + 各场 `zucai_num`(形如 `周四055`)+ 主-客球队名)念给用户确认,
    再往下走。**拿不准是哪一轮/哪几场就先问一句**,绝不替用户编场次。
 
-> `match_key` 是本地 `.cache/odds_cache.db` 的字符串主键(如 `"韩国 vs 南非"`);
-> 看板**不认识** match_key。务必主-客顺序,与「主队 vs 客队」对齐。
+> **`match_key` = 竞彩 `zucai_num`(形如 `周四055`),odds_cache 与 wc.db 同键**——不是
+> "X vs Y" 字符串。所有 baseline_market / match_fact_card / record_v1 / record_v2_prediction /
+> get_v1 / get_v2_prediction 都用它。球队名由 `data/wc.db` 经 zucai_num 反查(home_cn/away_cn)。
+> 第 5 步组 Decision 时,`Decision.match_key` 用「主队 vs 客队」串(看板展示可读),内部查库仍用 zucai_num。
 
 ### 第 2 步 · 确保盘口新鲜(三源)
 
@@ -104,11 +106,10 @@ CST = ET + 12/13。判断"今晚/明天/是否已开赛"**必须看 ET 当下**,
      ```
      python3 -c "from backend.baseline import baseline_market, HAD_CFG, HHAD_CFG, TTG_CFG; print(baseline_market('.cache/odds_cache.db','<match_key>',HAD_CFG)); print(baseline_market('.cache/odds_cache.db','<match_key>',HHAD_CFG)); print(baseline_market('.cache/odds_cache.db','<match_key>',TTG_CFG))"
      ```
-  2. 中立事实卡(确证新闻,恒无首发)。**关键:`match_fact_card` 第二参经 `db.match()` 按
-     `zucai_num` 查 `data/wc.db`,不是 odds_cache 的 `<match_key>`("X vs Y")——直接传 match_key
-     会查空、事实卡恒为空、v2 偏离链路空转。必须先用 home_cn/away_cn 反查该场 zucai_num:**
+  2. 中立事实卡(确证新闻,恒无首发)。**match_key 即竞彩 `zucai_num`(形如 `周四055`),
+     odds_cache 与 wc.db 同键。直接传 match_key 即可——它经 `db.match(zucai_num)` 查 `data/wc.db`:**
      ```
-     python3 -c "from backend.db import Db; from backend.intel import match_fact_card; from datetime import datetime, timezone, timedelta; db=Db('data/wc.db'); zn=next((m['zucai_num'] for m in db.matches() if m['home_cn']=='<home_cn>' and m['away_cn']=='<away_cn>'), None); print(match_fact_card(db, zn, datetime.now(timezone(timedelta(hours=8)))) if zn else {'teams': [], 'note': '该场未在 wc.db.matches, 事实卡缺位'})"
+     python3 -c "from backend.db import Db; from backend.intel import match_fact_card; from datetime import datetime, timezone, timedelta; print(match_fact_card(Db('data/wc.db'), '<match_key>', datetime.now(timezone(timedelta(hours=8)))))"
      ```
      (事实来自 enrich 表,两条入口:① watchlist 覆盖队的 `tools/collect_enrich.py` 推 Google-News
      新闻到 HK;② deep-search 确证事实经 `tools/save_intel.py`(`--db` 指主 checkout 的 `data/wc.db`、
