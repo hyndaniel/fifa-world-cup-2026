@@ -28,17 +28,32 @@
 
   <!-- tab 导航 -->
   <nav class="tabs" id="tabs">
-    <button class="tab-btn active" data-tab="dashboard">看板</button>
+    <button class="tab-btn active" data-tab="decisions">决策</button>
+    <button class="tab-btn" data-tab="dashboard">看板</button>
     <button class="tab-btn" data-tab="reports">📄 报告</button>
   </nav>
 
   <main>
+    <!-- ===== 决策视图 (新 hero: 每场决策卡) ===== -->
+    <section id="view-decisions" class="view active">
+      <section class="panel" id="panel-decisions">
+        <h2 class="panel-h">🎯 今日决策卡</h2>
+        <div class="panel-sub">按开球时间排序 · 每场一卡: v1 比分 / v2 概率+靠谱度+剧本 / 价值结论 · 点开看完整盘口明细</div>
+        <div id="decision-list" class="decision-list">
+          <div class="empty">加载中…</div>
+        </div>
+      </section>
+    </section>
+
     <!-- ===== 看板视图 ===== -->
-    <section id="view-dashboard" class="view active">
+    <section id="view-dashboard" class="view">
 
       <!-- 🎯 价值雷达 -->
       <section class="panel" id="panel-radar">
-        <h2 class="panel-h">🎯 价值雷达</h2>
+        <div class="panel-h-row">
+          <h2 class="panel-h">🎯 价值雷达</h2>
+          <button class="btn btn-refresh" id="radar-refresh" type="button" title="重抓足彩快照 + 刷新 Poly 去水, 治陈旧假黄档">🔄 重抓+刷新</button>
+        </div>
         <div class="panel-sub">所有可投点按 EV 排序 · 🟢 真 +EV · 🟡 接近公允(噪声内) · 每行直接对比足彩隐含 vs Poly 去水, 点开看完整明细</div>
         <div class="radar-head">
           <span class="rh-match">对阵 / 盘口</span>

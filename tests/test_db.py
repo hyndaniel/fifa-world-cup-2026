@@ -96,3 +96,72 @@ def test_match_getter_hit_and_miss(tmp_path):
     m = db.match("周四055")
     assert m is not None and m["home_cn"] == "南非" and m["away_cn"] == "韩国"
     assert db.match("无此场") is None
+
+
+def test_save_decisions_count_and_skip_missing_key(tmp_path):
+    """save_decisions: 返回写入条数; 缺 match_key 的跳过不计数。"""
+    db = Db(str(tmp_path / "d.db")); db.init()
+    n = db.save_decisions([
+        {"match_key": "韩国 vs 南非", "home_cn": "韩国", "away_cn": "南非",
+         "ko_bj": "6.27 02:00"},
+        {"home_cn": "缺键", "away_cn": "无效"},          # 缺 match_key → 跳过
+        {"match_key": "法国 vs 巴西", "home_cn": "法国", "away_cn": "巴西",
+         "ko_bj": "6.27 09:00"},
+        {"match_key": ""},                                # 空 match_key → 跳过
+    ])
+    assert n == 2
+    got = db.get_decisions()
+    keys = {d["match_key"] for d in got}
+    assert keys == {"韩国 vs 南非", "法国 vs 巴西"}
+
+
+def test_get_decisions_sorted_by_ko_bj_missing_last(tmp_path):
+    """get_decisions: 按 ko_bj 升序 (字符串序), 缺 ko_bj 排末尾。"""
+    db = Db(str(tmp_path / "d.db")); db.init()
+    db.save_decisions([
+        {"match_key": "无开球", "home_cn": "X", "away_cn": "Y"},   # 缺 ko_bj
+        {"match_key": "晚场", "ko_bj": "6.27 09:00"},
+        {"match_key": "早场", "ko_bj": "6.27 02:00"},
+    ])
+    got = db.get_decisions()
+    assert [d["match_key"] for d in got] == ["早场", "晚场", "无开球"]
+
+
+def test_save_decisions_upsert_replace_semantics(tmp_path):
+    """同一 match_key 二次写入 → 替换 (ON CONFLICT), 不累积; payload 整体替换。"""
+    db = Db(str(tmp_path / "d.db")); db.init()
+    db.save_decisions([
+        {"match_key": "韩国 vs 南非", "ko_bj": "6.27 02:00",
+         "v1": {"score": "0-1"}},
+    ])
+    db.save_decisions([
+        {"match_key": "韩国 vs 南非", "ko_bj": "6.27 03:00",
+         "v2": {"reliability": "乱"}},
+    ])
+    got = db.get_decisions()
+    assert len(got) == 1
+    d = got[0]
+    assert d["ko_bj"] == "6.27 03:00"
+    assert d.get("v2") == {"reliability": "乱"}
+    assert "v1" not in d  # 整体替换, 旧 v1 不残留
+
+
+def test_get_decisions_empty(tmp_path):
+    db = Db(str(tmp_path / "d.db")); db.init()
+    assert db.get_decisions() == []
+
+
+def test_latest_snapshot_picks_newest_per_source(tmp_path):
+    """latest_snapshot(source): 取该 source 最新一条 payload_json (解析后); 无 → None。"""
+    db = Db(str(tmp_path / "s.db")); db.init()
+    mid = db.upsert_match("周一013", "西", "佛", "Spain", "Cabo Verde",
+                          "s", "6.16 00:00", "23:00")
+    db.save_snapshot(mid, "zucai", {"v": 1, "tag": "old"})
+    db.save_snapshot(mid, "zucai", {"v": 2, "tag": "new"})
+    db.save_snapshot(mid, "poly", {"v": 99})
+    snap = db.latest_snapshot("zucai")
+    assert snap is not None and snap["tag"] == "new"
+    # 别的 source 不串
+    assert db.latest_snapshot("poly") == {"v": 99}
+    # 无此 source → None
+    assert db.latest_snapshot("nope") is None

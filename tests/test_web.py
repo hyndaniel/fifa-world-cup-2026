@@ -166,6 +166,108 @@ def test_ingest_enrich_accepts(tmp_path):
     assert fra is not None and fra["lineup"] is None and fra["news"] == []
 
 
+def test_ingest_predictions_accepts_and_skips(client):
+    """POST /api/ingest/predictions → {accepted,n,skipped}; 缺 match_key 计入 skipped。"""
+    c, db = client
+    payload = {"decisions": [
+        {"match_key": "韩国 vs 南非", "home_cn": "韩国", "away_cn": "南非",
+         "ko_bj": "6.27 02:00", "v1": {"score": "0-1"}},
+        {"home_cn": "缺键", "away_cn": "无效"},          # 缺 match_key → skipped
+        {"match_key": "法国 vs 巴西", "home_cn": "法国", "away_cn": "巴西",
+         "ko_bj": "6.27 09:00"},
+    ]}
+    r = c.post("/api/ingest/predictions", json=payload)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["accepted"] is True
+    assert body["n"] == 2
+    assert body["skipped"] == 1
+    # 落库可读回
+    got = db.get_decisions()
+    assert {d["match_key"] for d in got} == {"韩国 vs 南非", "法国 vs 巴西"}
+
+
+def test_get_decisions_sorted_and_shape(client):
+    """GET /api/decisions → {ts, decisions[]}; 按 ko_bj 升序, 缺末尾。"""
+    c, db = client
+    db.save_decisions([
+        {"match_key": "无开球", "home_cn": "X", "away_cn": "Y"},
+        {"match_key": "晚场", "ko_bj": "6.27 09:00"},
+        {"match_key": "早场", "ko_bj": "6.27 02:00"},
+    ])
+    r = c.get("/api/decisions")
+    assert r.status_code == 200
+    body = r.json()
+    assert "ts" in body and isinstance(body["ts"], str)
+    assert [d["match_key"] for d in body["decisions"]] == ["早场", "晚场", "无开球"]
+
+
+def test_get_decisions_empty(tmp_path):
+    """无 decisions → {ts, decisions: []}, 不崩。"""
+    db_path = tmp_path / "empty.db"
+    db = Db(str(db_path)); db.init()
+    cfg = load_config("nope.toml")
+    app = create_app(db_path=str(db_path), cfg=cfg, require_auth=False)
+    c = TestClient(app)
+    r = c.get("/api/decisions")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["decisions"] == []
+    assert isinstance(body["ts"], str)
+
+
+def test_refresh_no_snapshot_branch(tmp_path, monkeypatch):
+    """无 zucai 快照 → {accepted: false, reason}, 不抛错, 不调 poll_once。"""
+    db_path = tmp_path / "norefresh.db"
+    db = Db(str(db_path)); db.init()
+    cfg = load_config("nope.toml")
+    app = create_app(db_path=str(db_path), cfg=cfg, require_auth=False)
+    c = TestClient(app)
+
+    import backend.poller as poller_mod
+    called = []
+    monkeypatch.setattr(poller_mod, "poll_once",
+                        lambda db, cfg, **kw: (called.append(kw), 0)[1])
+
+    r = c.post("/api/refresh")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["accepted"] is False
+    assert "reason" in body
+    assert called == []  # 没快照不应调 poll_once
+
+
+def test_refresh_triggers_poll_once_with_snapshot(client, monkeypatch):
+    """有 zucai 快照 → {accepted: true}; 后台 poll_once 被调, 且注入的 payload 即快照。"""
+    c, db = client
+    # 落一条 zucai 快照
+    mid = db.upsert_match("周一013", "西", "佛", "Spain", "Cabo Verde",
+                          "s", "6.16 00:00", "23:00")
+    db.save_snapshot(mid, "zucai", {"value": {"matchInfoList": []}, "tag": "snap1"})
+
+    import backend.poller as poller_mod
+    captured = {}
+
+    def fake_poll(db_, cfg_, **kw):
+        # 抓住注入的 zucai_fetch 返回值, 防联网
+        f = kw.get("zucai_fetch")
+        captured["payload"] = f() if f else None
+        return 0
+
+    monkeypatch.setattr(poller_mod, "poll_once", fake_poll)
+
+    r = c.post("/api/refresh")
+    assert r.status_code == 200
+    assert r.json()["accepted"] is True
+    # 后台线程异步, 给它一点时间
+    import time as _t
+    for _ in range(50):
+        if "payload" in captured:
+            break
+        _t.sleep(0.01)
+    assert captured.get("payload", {}).get("tag") == "snap1"
+
+
 def test_auth_enforced_when_password_set(tmp_path):
     db_path = tmp_path / "auth.db"
     db = Db(str(db_path))

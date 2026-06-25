@@ -72,6 +72,11 @@ CREATE TABLE IF NOT EXISTS enrich (
     lineup_json TEXT,
     news_json TEXT
 );
+CREATE TABLE IF NOT EXISTS decisions (
+    match_key TEXT PRIMARY KEY,
+    ts TEXT,
+    payload_json TEXT
+);
 """
 
 
@@ -300,3 +305,58 @@ class Db:
         with self._conn() as conn:
             rows = conn.execute("SELECT * FROM enrich").fetchall()
             return {r["team_cn"]: self._row_to_enrich(r) for r in rows}
+
+    # ---------- decisions (本地 skill 写回的"每场决策卡") ----------
+    def save_decisions(self, decisions):
+        """逐条按 match_key upsert (替换语义), 整个 Decision dict 存为 payload_json,
+        ts=_now_bj(); 返回成功写入条数。缺/空 match_key 的条目跳过 (不计数)。
+        """
+        ts = _now_bj()
+        n = 0
+        with self._conn() as conn:
+            for d in decisions or []:
+                if not isinstance(d, dict):
+                    continue
+                mk = d.get("match_key")
+                if not mk:
+                    continue
+                conn.execute(
+                    """INSERT INTO decisions (match_key, ts, payload_json)
+                       VALUES (?,?,?)
+                       ON CONFLICT(match_key) DO UPDATE SET
+                         ts=excluded.ts, payload_json=excluded.payload_json""",
+                    (mk, ts, json.dumps(d, ensure_ascii=False)),
+                )
+                n += 1
+        return n
+
+    def get_decisions(self):
+        """取全部 decisions, json.loads(payload_json), 按 ko_bj 升序 (字符串序,
+        格式 "M.D HH:MM"); 缺 ko_bj 的排末尾。返回 Decision dict 列表。
+        """
+        with self._conn() as conn:
+            rows = conn.execute("SELECT payload_json FROM decisions").fetchall()
+        out = []
+        for r in rows:
+            try:
+                out.append(json.loads(r["payload_json"]))
+            except (TypeError, ValueError):
+                continue
+        out.sort(key=lambda d: (not (d.get("ko_bj")), d.get("ko_bj") or ""))
+        return out
+
+    def latest_snapshot(self, source):
+        """取该 source 最新一条 odds_snapshots, 返回 json.loads(payload_json);
+        无 → None。供 /api/refresh 用。
+        """
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT payload_json FROM odds_snapshots WHERE source=? ORDER BY id DESC LIMIT 1",
+                (source,),
+            ).fetchone()
+        if not row:
+            return None
+        try:
+            return json.loads(row["payload_json"])
+        except (TypeError, ValueError):
+            return None

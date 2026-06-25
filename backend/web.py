@@ -49,6 +49,12 @@ class WatchIn(BaseModel):
     note: str = ""
 
 
+class PredictionsIn(BaseModel):
+    # 宽松: decisions 为 Decision dict 列表 (未知字段透传); ts 选填。
+    decisions: list = []
+    ts: str = ""
+
+
 def _auth_enabled(cfg, require_auth):
     if require_auth is not None:
         return bool(require_auth)
@@ -174,6 +180,46 @@ def create_app(db_path="wc.db", cfg=None, reports_dir="reports",
             db.save_enrich(item["team"], item.get("lineup"), item.get("news") or [])
             n += 1
         return {"accepted": True, "teams": n}
+
+    # ---------------- /api/ingest/predictions ----------------
+    # 本地 /跑今天 skill 把 v1 比分 + v2 概率 + 价值结论汇成"决策对象"列表 POST 来,
+    # 看板按 match_key 原样 upsert 存 (替换语义), 不删本批未出现的旧卡。缺 match_key
+    # 的条目跳过并计入 skipped。
+    @app.post("/api/ingest/predictions", dependencies=[Depends(auth_dep)])
+    def api_ingest_predictions(body: PredictionsIn):
+        decisions = body.decisions or []
+        total = len(decisions)
+        n = db.save_decisions(decisions)
+        return {"accepted": True, "n": n, "skipped": total - n}
+
+    # ---------------- /api/decisions ----------------
+    # 前端"每场决策卡"据此渲染。按 ko_bj 升序 (缺末尾), 附服务端当前北京时间 ts。
+    @app.get("/api/decisions", dependencies=[Depends(auth_dep)])
+    def api_decisions():
+        now_bj = datetime.now(BJ)
+        return {
+            "ts": now_bj.isoformat(timespec="seconds"),
+            "decisions": db.get_decisions(),
+        }
+
+    # ---------------- /api/refresh ----------------
+    # 价值"重抓+刷新"按钮用: 取最新一条 source='zucai' 的快照 payload, 后台经
+    # poll_once(注入此 payload) 重跑 (内部重连 Poly 刷去水 → 重算 value_points, 治
+    # "陈旧 Poly 假黄档")。无 zucai 快照 → {accepted: false, reason}, 不抛错。
+    @app.post("/api/refresh", dependencies=[Depends(auth_dep)])
+    def api_refresh():
+        snapshot = db.latest_snapshot("zucai")
+        if snapshot is None:
+            return {"accepted": False, "reason": "no zucai snapshot"}
+
+        def work():
+            try:
+                poller.poll_once(db, cfg, zucai_fetch=lambda: snapshot)
+            except Exception as e:  # noqa: BLE001
+                print("refresh poll_once 失败:", e)
+
+        threading.Thread(target=work, daemon=True).start()
+        return {"accepted": True}
 
     # ---------------- static frontend ----------------
     if os.path.isdir(frontend_dir):

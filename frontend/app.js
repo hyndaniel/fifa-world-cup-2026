@@ -238,6 +238,207 @@ function renderRadar(rows) {
   }
 }
 
+// ================= 决策卡 (新 hero) =================
+// 靠谱度徽章: 稳=绿 / 中=黄 / 乱=红, 与 flag 用色一致
+function reliabilityBadge(rel) {
+  if (rel === "稳") return { label: "稳", cls: "rel-stable" };
+  if (rel === "中") return { label: "中", cls: "rel-mid" };
+  if (rel === "乱") return { label: "乱", cls: "rel-chaos" };
+  return null;
+}
+
+// 单条盘口明细行 (展开用): 与雷达明细同构, 复用 fmt* / flagBadge
+function buildLegRow(leg) {
+  const b = flagBadge(leg.flag);
+  const row = el("div", `dc-leg ${b.cls}`);
+  row.appendChild(el("span", "dc-leg-dot", b.dot));
+  const descText = leg.desc || `${leg.market || ""} ${leg.outcome || ""}`.trim() || "—";
+  row.appendChild(el("span", "dc-leg-desc", descText));
+  const meta = el("span", "dc-leg-meta");
+  if (leg.zucai_odds != null) meta.appendChild(el("span", "dc-leg-odds", `足彩 ${fmtNum(leg.zucai_odds)}`));
+  if (leg.poly_prob_devig != null) meta.appendChild(el("span", "dc-leg-poly", `Poly ${fmtNum(leg.poly_prob_devig, 1)}%去水`));
+  const ev = leg.ev_pct_devig != null ? leg.ev_pct_devig : leg.ev_pct;
+  if (ev != null && !Number.isNaN(Number(ev))) {
+    const evCls = Number(ev) >= 0 ? "dc-pos" : "dc-neg";
+    meta.appendChild(el("span", `dc-leg-ev ${evCls}`, `EV ${fmtSignedPct(ev)}`));
+  }
+  row.appendChild(meta);
+  return row;
+}
+
+// 一张决策卡; 任一块 (v1/v2/value) 缺整块 -> 占位"未出"不崩
+function buildDecisionCard(d) {
+  d = d || {};
+  const card = el("div", "decision-card");
+
+  // ---- 头: 对阵 + 国旗 + 开球 ----
+  const head = el("div", "dc-head");
+  const matchEl = el("div", "dc-match");
+  const home = `${d.home_flag ? d.home_flag + " " : ""}${d.home_cn || ""}`.trim();
+  const away = `${d.away_flag ? d.away_flag + " " : ""}${d.away_cn || ""}`.trim();
+  const title = home && away ? `${home} vs ${away}` : (d.match_key || "—");
+  matchEl.textContent = title;
+  head.appendChild(matchEl);
+
+  const ko = el("div", "dc-ko");
+  if (d.ko_bj) {
+    ko.appendChild(el("span", "dc-ko-bj", `🕐 ${d.ko_bj}`));
+    if (d.ko_et) ko.appendChild(el("span", "dc-ko-et", d.ko_et));
+  } else {
+    ko.appendChild(el("span", "dc-ko-bj", "开球待定"));
+  }
+  if (d.status) ko.appendChild(el("span", "dc-status", d.status));
+  head.appendChild(ko);
+  card.appendChild(head);
+
+  // ---- v1: 比分 + rationale ----
+  const v1Block = el("div", "dc-block dc-v1");
+  v1Block.appendChild(el("span", "dc-tag", "v1 比分"));
+  if (d.v1 && (d.v1.score != null || d.v1.rationale)) {
+    if (d.v1.score != null) v1Block.appendChild(el("span", "dc-score", String(d.v1.score)));
+    if (d.v1.rationale) v1Block.appendChild(el("span", "dc-rationale", d.v1.rationale));
+    if (d.v1.probs) {
+      const p = d.v1.probs;
+      v1Block.appendChild(el("span", "dc-v1-probs", `胜${fmtPct(p.h, 0)}/平${fmtPct(p.d, 0)}/负${fmtPct(p.a, 0)}`));
+    }
+  } else {
+    v1Block.appendChild(el("span", "dc-placeholder", "— 未出"));
+  }
+  card.appendChild(v1Block);
+
+  // ---- v2: 概率 + 靠谱度 + 剧本 chips ----
+  const v2Block = el("div", "dc-block dc-v2");
+  v2Block.appendChild(el("span", "dc-tag", "v2 概率"));
+  if (d.v2 && (d.v2.probs || d.v2.reliability || (Array.isArray(d.v2.scenarios) && d.v2.scenarios.length))) {
+    if (d.v2.probs) {
+      const p = d.v2.probs;
+      const probs = el("span", "dc-v2-probs");
+      probs.appendChild(el("span", "dc-prob dc-prob-h", `胜 ${fmtPct(p.h, 0)}`));
+      probs.appendChild(el("span", "dc-prob dc-prob-d", `平 ${fmtPct(p.d, 0)}`));
+      probs.appendChild(el("span", "dc-prob dc-prob-a", `负 ${fmtPct(p.a, 0)}`));
+      v2Block.appendChild(probs);
+    }
+    const rb = reliabilityBadge(d.v2.reliability);
+    if (rb) {
+      const badge = el("span", `dc-rel ${rb.cls}`, `靠谱度 ${rb.label}`);
+      v2Block.appendChild(badge);
+    }
+    if (d.v2.deviated) v2Block.appendChild(el("span", "dc-deviated", "⚡偏离"));
+    if (Array.isArray(d.v2.scenarios) && d.v2.scenarios.length) {
+      const chips = el("div", "dc-chips");
+      for (const s of d.v2.scenarios) {
+        if (s == null || s === "") continue;
+        chips.appendChild(el("span", "dc-chip", String(s)));
+      }
+      v2Block.appendChild(chips);
+    }
+  } else {
+    v2Block.appendChild(el("span", "dc-placeholder", "— 未出"));
+  }
+  card.appendChild(v2Block);
+
+  // ---- value: verdict + best_leg; 点击展开 legs ----
+  const valBlock = el("div", "dc-block dc-value");
+  valBlock.appendChild(el("span", "dc-tag", "价值"));
+  if (d.value && (d.value.verdict || d.value.best_leg || (Array.isArray(d.value.legs) && d.value.legs.length))) {
+    if (d.value.verdict) valBlock.appendChild(el("span", "dc-verdict", d.value.verdict));
+    const bl = d.value.best_leg;
+    if (bl) {
+      const b = flagBadge(bl.flag);
+      const best = el("span", `dc-best ${b.cls}`);
+      best.appendChild(el("span", "dc-best-dot", b.dot));
+      best.appendChild(el("span", "dc-best-desc", bl.desc || `${bl.market || ""} ${bl.outcome || ""}`.trim() || "最不亏腿"));
+      if (bl.ev_pct != null && !Number.isNaN(Number(bl.ev_pct))) {
+        const evCls = Number(bl.ev_pct) >= 0 ? "dc-pos" : "dc-neg";
+        best.appendChild(el("span", `dc-best-ev ${evCls}`, `EV ${fmtSignedPct(bl.ev_pct)}`));
+      }
+      valBlock.appendChild(best);
+    }
+    card.appendChild(valBlock);
+
+    // 完整盘口明细 (点击 value 块展开)
+    const legs = Array.isArray(d.value.legs) ? d.value.legs : [];
+    if (legs.length) {
+      const detail = el("div", "dc-legs");
+      detail.hidden = true;
+      for (const leg of legs) detail.appendChild(buildLegRow(leg));
+      card.appendChild(detail);
+
+      valBlock.classList.add("dc-expandable");
+      const hint = el("span", "dc-expand-hint", "▾ 明细");
+      valBlock.appendChild(hint);
+      valBlock.addEventListener("click", () => {
+        detail.hidden = !detail.hidden;
+        card.classList.toggle("open", !detail.hidden);
+        hint.textContent = detail.hidden ? "▾ 明细" : "▴ 收起";
+      });
+    }
+  } else {
+    valBlock.appendChild(el("span", "dc-placeholder", "— 未出"));
+    card.appendChild(valBlock);
+  }
+
+  return card;
+}
+
+function renderDecisions(decisions) {
+  const list = $("#decision-list");
+  if (!list) return;
+  list.innerHTML = "";
+  if (!decisions || decisions.length === 0) {
+    list.appendChild(el("div", "empty", "今日暂无决策卡, 在本地跑 /跑今天 生成"));
+    return;
+  }
+  for (const d of decisions) {
+    list.appendChild(buildDecisionCard(d));
+  }
+}
+
+async function loadDecisions() {
+  const list = $("#decision-list");
+  try {
+    const resp = await apiGet("/api/decisions");
+    renderDecisions((resp && resp.decisions) || []);
+  } catch (err) {
+    if (list) {
+      list.innerHTML = "";
+      list.appendChild(el("div", "empty", "决策卡加载失败: " + err.message));
+    }
+  }
+}
+
+// 价值"重抓+刷新": 触发后台重抓足彩快照 + 刷新 Poly 去水, 延时重拉 state + decisions
+async function refreshValue(btn) {
+  const original = btn ? btn.textContent : "";
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "重抓中…";
+  }
+  try {
+    await apiSend("/api/refresh", "POST");
+    // 给后台重算留时间 (poll_once 内重连 Poly), 随后重拉
+    setTimeout(() => {
+      refreshState();
+      loadDecisions();
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = original || "🔄 重抓+刷新";
+      }
+    }, 3000);
+  } catch (err) {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "刷新失败, 重试";
+    }
+  }
+}
+
+function setupRadarRefresh() {
+  const btn = $("#radar-refresh");
+  if (!btn) return;
+  btn.addEventListener("click", () => refreshValue(btn));
+}
+
 // ================= 特别关注 =================
 function renderWatchlist(items) {
   const wrap = $("#watch-list");
@@ -519,6 +720,7 @@ function setupTabs() {
       const view = $(`#view-${tab}`);
       if (view) view.classList.add("active");
       if (tab === "reports") loadReportsList();
+      if (tab === "decisions") loadDecisions();
     });
   });
 }
@@ -562,6 +764,8 @@ async function refreshState() {
     setConn(false);
     $("#updated-at").textContent = "离线: " + err.message;
   }
+  // 决策卡走独立端点, 与 state 同节奏刷新 (失败不影响 state 渲染)
+  loadDecisions();
 }
 
 // ================= 启动 =================
@@ -569,6 +773,7 @@ function init() {
   setupTabs();
   setupWatchAdd();
   setupBetForm();
+  setupRadarRefresh();
 
   // 倒计时本地每秒 tick (与服务端轮询解耦)
   state.cdTimer = setInterval(tickCountdown, 1000);
