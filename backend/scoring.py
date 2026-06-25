@@ -4,16 +4,17 @@
 def brier_multi(probs: dict, actual: str) -> float:
     """多分类 Brier = Σ(p_k − y_k)²(p_k 分数,actual 命中 y=1)。越低越准,[0,2]。
 
-    注:仅对 probs 里出现的类求和。若 actual 不在 probs 键里(本项目胜平负 h/d/a
-    恒三键齐全,不会发生),它的 y=1 项被静默略去 → Brier 偏小;调用方须保证
-    actual ∈ probs(Minor #3)。
-    """
+    actual 不在 probs 支撑内(如总进球真值超出该场盘口覆盖的档位)= 满罚该真值类:
+    它的 y=1 而预测 p≈0,补一个 (0−1)²=1 的罚分,绝不静默漏掉(否则 Brier 偏小、
+    会伪造"市场基线很准")。had 恒三键齐全,此分支不触发,行为不变。"""
     s = sum(probs.values())
     if s <= 0:
         return 0.0
     frac = {k: v / s for k, v in probs.items()}
-    return round(sum((frac.get(k, 0.0) - (1.0 if k == actual else 0.0)) ** 2
-                     for k in frac), 4)
+    total = sum((frac.get(k, 0.0) - (1.0 if k == actual else 0.0)) ** 2 for k in frac)
+    if actual not in frac:
+        total += 1.0
+    return round(total, 4)
 
 
 def calibration_buckets(preds: list, n: int = 5) -> list:

@@ -24,7 +24,9 @@ def apply_deviations(baseline: dict, deviations: list, keys=_KEYS) -> dict:
             for k in others:
                 cur[k] = rest_new / len(others)
     tot = sum(cur.values())
-    return {k: round(cur[k] / tot * 100, 1) for k in keys} if tot else cur
+    # 按 cur(=keys ∪ 被钉 outcome)输出: 即便某偏离 outcome 不在 keys 内也保留其质量,
+    # 分布严格归一到 100(不再 desum)。正常情形 pinned⊆keys, cur 键集=keys, 行为不变。
+    return {k: round(cur[k] / tot * 100, 1) for k in cur} if tot else cur
 
 
 def build_v2_prediction(match_key, reliability, scenarios, markets_in):

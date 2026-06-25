@@ -37,6 +37,14 @@ def test_apply_deviations_ttg_multikey_sum_100():
     assert set(out) == set(base)
 
 
+def test_apply_deviations_out_of_keys_pin_keeps_sum_100():
+    base = {"0": 25.0, "1": 25.0, "2": 25.0, "3": 25.0}
+    out = apply_deviations(base, [{"outcome": "5", "to": 40.0, "reason": "x"}],
+                           keys=tuple(base))
+    assert abs(sum(out.values()) - 100.0) < 0.1   # 不再 desum 到 60
+    assert "5" in out and abs(out["5"] - 40.0) < 0.6
+
+
 def test_build_v2_prediction_markets_shape():
     out = build_v2_prediction("M1", "乱", ["默契平"], {
         "had": {"baseline": {"h": 30.0, "d": 30.0, "a": 40.0},

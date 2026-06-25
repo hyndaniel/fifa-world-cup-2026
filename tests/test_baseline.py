@@ -153,6 +153,14 @@ def test_hhad_outcome_boundaries():
     assert _hhad_outcome(0, 1, 1) == "d"    # 主受让一球, 0-1 净 0 → 平
 
 
+def test_hhad_outcome_verified_convention_home_giving_negative():
+    # 实测真实缓存确认: 主队让球记负(主让一球 line=-1), 受让记正(line=+1)
+    assert _hhad_outcome(2, 0, -1) == "h"   # 主让一球, 净胜2 → 赢盘
+    assert _hhad_outcome(1, 0, -1) == "d"   # 主让一球, 净胜1=让球数 → 走盘(平)
+    assert _hhad_outcome(0, 0, 1) == "h"    # 主受让一球, 平局 → 赢盘
+    assert _hhad_outcome(0, 1, 1) == "d"    # 主受让一球, 输1球 → 走盘(平)
+
+
 def _seed_ttg(path):
     conn = sqlite3.connect(path)
     conn.execute("""CREATE TABLE IF NOT EXISTS odds_cache (id INTEGER PRIMARY KEY AUTOINCREMENT,
