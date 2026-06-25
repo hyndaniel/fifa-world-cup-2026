@@ -22,19 +22,19 @@ description: 把 WC 价值看板部署到 HK 实盘机(aws-hk)。触发词:fifa-
 确认要部署的 PR 已 merge 进 main。给该 commit 打日期式 tag(N = 当天第几次部署):
 ```
 git checkout main && git pull
+python3 -m pytest -q
 git tag fifa-deploy/<当天日期>-<N>
 git push origin fifa-deploy/<当天日期>-<N>
-python3 -m pytest -q
 ```
-例:`fifa-deploy/2026-06-26-1`。最后那行在该 tag commit 上跑测试,要绿。
+例:`fifa-deploy/2026-06-26-1`。**先 pytest 绿、再打 tag 发布**(测试红就别 push tag,免得不可部署的 tag 上了 origin)。
 
 ### 1. HK 钉到该 tag — remote_exec(host aws-hk)
 ```
 cd /opt/github/fifa-world-cup-2026
-git config --global --add safe.directory /opt/github/fifa-world-cup-2026
-git -c safe.directory='*' fetch origin --tags
-git -c safe.directory='*' reset --hard fifa-deploy/<当天日期>-<N>
-git -c safe.directory='*' describe --tags
+git config --global --add safe.directory /opt/github/fifa-world-cup-2026   # 一次性, 幂等; 治 dubious ownership
+git fetch origin --tags
+git reset --hard fifa-deploy/<当天日期>-<N>
+git describe --tags
 ```
 `reset --hard <tag>` 钉到不可变 tag → 部署确定、有"哪天发了哪个"的历史。最后一行确认 HEAD == 该 tag。HK 无本地代码改动(data/config gitignored,untracked junk 不影响)。
 
