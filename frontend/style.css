@@ -980,15 +980,33 @@ main {
 /* ============================================================
    报告 tab
    ============================================================ */
-.report-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.report-tabs { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
+.report-group { display: flex; flex-direction: column; gap: 4px; }
+.report-group + .report-group { margin-top: 10px; }
+.report-group-h {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  letter-spacing: 0.02em; color: var(--bone-faint); padding: 2px 2px 0;
+}
 .report-tab {
+  display: flex; align-items: center; gap: 10px; width: 100%;
   background: var(--ink-3); border: 1px solid var(--frame-soft); color: var(--bone-dim);
-  border-radius: var(--r); padding: 6px 11px;
-  font-family: var(--font-mono); font-size: 12px; cursor: pointer;
-  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  border-radius: var(--r); padding: 7px 11px;
+  font-family: var(--font-mono); font-size: 12px; cursor: pointer; text-align: left;
 }
 .report-tab:hover { border-color: var(--frame); color: var(--bone); }
+.report-tab .rt-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.report-tab .rt-time { flex: 0 0 auto; font-size: 11px; color: var(--bone-faint); font-variant-numeric: tabular-nums; }
 .report-tab.active { background: var(--ink-2); color: var(--bone); border-color: var(--bone-faint); }
+.report-tab.active .rt-title { color: var(--bone); }
+.report-tab.active .rt-time { color: var(--bone-dim); }
+/* 折叠: [hidden] 必须显式压过 .report-tab/.report-group 的 display (作者样式盖 UA) */
+.report-tab[hidden], .report-group[hidden] { display: none; }
+.report-more {
+  align-self: flex-start; margin-top: 6px;
+  background: transparent; border: none; color: var(--bone-dim);
+  font-family: var(--font-mono); font-size: 11.5px; cursor: pointer; padding: 4px 2px;
+}
+.report-more:hover { color: var(--bone); text-decoration: underline; }
 .report-body { font-size: 14px; line-height: 1.75; word-wrap: break-word; overflow-wrap: anywhere; }
 .report-raw { white-space: pre-wrap; word-break: break-word; font-family: var(--font-mono); font-size: 12.5px; }
 
