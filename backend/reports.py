@@ -6,7 +6,48 @@
 - read_report(name, reports_dir="reports") -> str
     返回该 .md 文本; 防目录穿越 (name 不得含路径分隔/.. , 解析后必须仍落在 reports_dir 内)。
 """
+import json
 import pathlib
+import subprocess
+
+
+def _load_times(reports_dir):
+    """读构建期清单 reports/report_times.json -> {name: unix秒}; 缺/坏 -> {}。"""
+    p = pathlib.Path(reports_dir) / "report_times.json"
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _git_ts(path):
+    """该文件最后一次 git 提交的 unix 秒; 无 git / 非仓内 / 无提交 -> None。"""
+    try:
+        out = subprocess.run(
+            ["git", "log", "-1", "--format=%ct", "--", path.name],
+            cwd=str(path.parent), capture_output=True, text=True, timeout=3,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    s = out.stdout.strip()
+    return int(s) if out.returncode == 0 and s.isdigit() else None
+
+
+def _resolve_ts(name, path, times):
+    """报告排序/显示时间戳(unix 秒)。优先构建期清单(免疫部署 mtime 抹平、
+    免容器内无 git), 其次 git 提交时间(本地/有 .git 处), 最后文件 mtime。
+    """
+    v = times.get(name)
+    if isinstance(v, (int, float)) and v > 0:
+        return float(v)
+    ts = _git_ts(path)
+    if ts:
+        return float(ts)
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0
 
 
 def _first_h1(text):
@@ -27,6 +68,7 @@ def list_reports(reports_dir="reports"):
     base = pathlib.Path(reports_dir)
     if not base.is_dir():
         return []
+    times = _load_times(reports_dir)
     out = []
     for p in sorted(base.glob("*.md")):
         if not p.is_file():
@@ -43,10 +85,7 @@ def list_reports(reports_dir="reports"):
         except (OSError, UnicodeDecodeError):
             # 坏编码不应拖垮整个列表接口, 回退到文件名当标题
             pass
-        try:
-            mtime = p.stat().st_mtime
-        except OSError:
-            mtime = 0.0
+        mtime = _resolve_ts(name, p, times)
         out.append({"name": name, "title": title, "mtime": mtime})
     # 最新生成/更新的报告排最前
     out.sort(key=lambda r: r["mtime"], reverse=True)

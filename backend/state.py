@@ -58,6 +58,57 @@ def _parse_cutoff_dt(cutoff_bj, ko_bj, now_bj):
     return dt
 
 
+DECAY_H = 6  # 决策卡/今日场次: 开球后保留小时数, 超过即衰减消失
+
+
+def parse_ko_dt(ko_bj, now_bj):
+    """ "M.D HH:MM" -> 北京 aware datetime(年份取 now_bj.year); 无法解析 -> None。
+
+    以开球时刻为锚, 跨北京午夜的夜场(ko_bj 带次日日期前缀)天然连续。
+    """
+    s = str(ko_bj or "").strip()
+    parts = s.split(" ")
+    if len(parts) != 2 or "." not in parts[0] or ":" not in parts[1]:
+        return None
+    try:
+        m_s, d_s = parts[0].split(".")
+        hh_s, mm_s = parts[1].split(":")
+        return datetime(now_bj.year, int(m_s), int(d_s), int(hh_s), int(mm_s), tzinfo=BJ)
+    except (ValueError, AttributeError):
+        return None
+
+
+def ko_status(ko_bj, now_bj, decay_h=DECAY_H):
+    """返回 (状态, dt|None)。
+    upcoming: 还没开球; recent: 已开球但在 decay_h 小时内; expired: 超过; unknown: 解析不出。
+    """
+    dt = parse_ko_dt(ko_bj, now_bj)
+    if dt is None:
+        return ("unknown", None)
+    if dt >= now_bj:
+        return ("upcoming", dt)
+    if dt >= now_bj - timedelta(hours=decay_h):
+        return ("recent", dt)
+    return ("expired", dt)
+
+
+def decisions_view(decisions, now_bj, decay_h=DECAY_H):
+    """筛掉 expired 的场, 每条附 view_status, 按开球时刻升序(unknown 末尾)。
+
+    输入是 db.get_decisions() 的全量 Decision dict 列表; 返回过滤+标注后的浅拷贝列表。
+    """
+    out = []
+    for d in decisions or []:
+        if not isinstance(d, dict):
+            continue
+        status, dt = ko_status(d.get("ko_bj"), now_bj, decay_h)
+        if status == "expired":
+            continue
+        out.append((dt, {**d, "view_status": status}))
+    out.sort(key=lambda t: (t[0] is None, t[0] or now_bj))
+    return [d for _dt, d in out]
+
+
 def _radar_item(vp, match):
     """单条 value_radar (契约字段)。"""
     value_raw = vp.get("value_raw")
@@ -258,19 +309,21 @@ def build_state(db, cfg, now_bj=None) -> dict:
     b_budget = cfg.get("wallet", {}).get("B_weekly_budget", 100) if cfg else 100
     ledger = db.ledger(b_budget=b_budget)
 
-    # ---- matches_today: now 同日 (按 ko_bj 的 M.D 前缀) ----
-    today_head = f"{now_bj.month}.{now_bj.day:02d}"
-    today_head_alt = f"{now_bj.month}.{now_bj.day}"
-    matches_today = []
+    # ---- matches_today: 开球 -DECAY_H 滑窗内的场, 按开球升序, 附 view_status ----
+    mt = []
     for m in matches:
-        head = str(m.get("ko_bj") or "").strip().split(" ")[0]
-        if head in (today_head, today_head_alt):
-            matches_today.append({
-                "match": f"{m.get('home_cn', '')} vs {m.get('away_cn', '')}",
-                "ko_bj": m.get("ko_bj") or "",
-                "cutoff_bj": m.get("cutoff_bj") or "",
-                "status": m.get("status") or "",
-            })
+        status, dt = ko_status(m.get("ko_bj"), now_bj)
+        if status == "expired":
+            continue
+        mt.append((dt, {
+            "match": f"{m.get('home_cn', '')} vs {m.get('away_cn', '')}",
+            "ko_bj": m.get("ko_bj") or "",
+            "cutoff_bj": m.get("cutoff_bj") or "",
+            "status": m.get("status") or "",
+            "view_status": status,
+        }))
+    mt.sort(key=lambda t: (t[0] is None, t[0] or now_bj))
+    matches_today = [x for _dt, x in mt]
 
     return {
         "ts": now_bj.isoformat(timespec="seconds"),

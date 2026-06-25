@@ -33,7 +33,7 @@ from backend.config import load_config
 from backend.db import Db
 from backend import poller
 from backend import reports as reports_mod
-from backend.state import BJ, build_state, datetime
+from backend.state import BJ, build_state, datetime, decisions_view
 
 log = logging.getLogger(__name__)
 
@@ -207,7 +207,7 @@ def create_app(db_path="wc.db", cfg=None, reports_dir="reports",
         now_bj = datetime.now(BJ)
         return {
             "ts": now_bj.isoformat(timespec="seconds"),
-            "decisions": db.get_decisions(),
+            "decisions": decisions_view(db.get_decisions(), now_bj),
         }
 
     # ---------------- /api/refresh ----------------

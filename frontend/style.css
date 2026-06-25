@@ -1125,3 +1125,36 @@ html[data-theme="amber"] {
   --bleed: #ff5a57; --bleed-bg: rgba(255,90,87,.14);
   --bg-glow: #16110a; --topbar-1: rgba(22,17,10,.96); --topbar-2: rgba(11,9,5,.92);
 }
+
+/* ===== 赛程图(决策面板重做) ===== */
+.dec-filter{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+.df-btn{border:1px solid var(--frame);background:var(--ink-2);font:inherit;font-size:12px;
+  padding:5px 12px;border-radius:var(--r);cursor:pointer;color:var(--bone-dim)}
+.df-btn.on{background:var(--bone);color:var(--ink-2);border-color:var(--bone)}
+.dec-group-h{font-family:var(--font-mono);font-size:12px;color:var(--bone-dim);letter-spacing:1px;
+  margin:14px 0 8px;padding-bottom:4px;border-bottom:1px dashed var(--frame-soft);text-transform:uppercase}
+.sched-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--frame-soft);
+  border-radius:var(--r);background:var(--ink-2);margin-bottom:6px;cursor:pointer}
+.sched-row:hover{border-color:var(--frame)}
+.sched-row.sel{border-color:var(--bone-faint);background:var(--ink-3)}
+.sched-row.done{opacity:.5}
+.sched-row .sr-time{font-family:var(--font-mono);font-size:13px;color:var(--bone-dim);width:50px;flex:0 0 auto}
+.sched-row .sr-match{font-weight:600;font-size:14px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sched-row .sr-v1{font-family:var(--font-mono);font-size:12px;color:var(--bone-faint)}
+.sched-row .sr-chip{margin-left:auto;display:inline-flex;align-items:center;gap:5px;font-size:11px;
+  padding:2px 7px;border-radius:99px;border:1px solid var(--frame);background:var(--ink-2);flex:0 0 auto}
+.sched-row .sr-chip.flag-green{border-color:var(--edge);background:var(--edge-bg)}
+.sched-row .sr-chip.flag-yellow{border-color:var(--fair);background:var(--fair-bg)}
+.sched-row .sr-chip.flag-red{border-color:var(--bleed);background:var(--bleed-bg)}
+.sched-row .ev-pos{color:var(--edge)} .sched-row .ev-neg{color:var(--bleed)}
+
+/* 详情面板: 桌面右侧常驻 / 窄屏行内 */
+.dec-split{display:grid;grid-template-columns:1fr 372px;gap:16px;align-items:start}
+.dec-list-col{min-width:0}
+.dec-panel{border:1px solid var(--frame);border-radius:var(--r);background:var(--ink);
+  padding:14px 16px;position:sticky;top:14px}
+.dec-inline{border:1px solid var(--frame);border-top:none;border-radius:0 0 var(--r) var(--r);
+  background:var(--ink);padding:12px 14px;margin:-6px 0 10px}
+@media(max-width:820px){
+  .dec-split{display:block}     /* 窄屏单列, 详情走 .dec-inline */
+}
