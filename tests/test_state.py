@@ -115,8 +115,8 @@ def test_watchlist_and_matches_today():
     assert len(w) == 1 and w[0]["key"] == "西班牙"
     for k in ("kind", "key", "note", "matches", "lineup", "news", "radar_hits"):
         assert k in w[0]
-    # 两场都在 6.16
-    assert len(st["matches_today"]) == 2
+    # 滑窗口径: now=6.16 20:30, 两场 ko 在 00:00/03:00 (均超 6h 衰减窗) → 全部 expired, 不出现
+    assert st["matches_today"] == []
 
 
 def test_watchlist_enriched():
@@ -168,3 +168,20 @@ def test_watchlist_enriched():
         assert k in hit
     assert hit["flag"] == "green"
     assert hit["ev_pct_devig"] == 28.3
+
+
+def test_matches_today_window_drops_finished(tmp_path):
+    from backend.db import Db
+    from backend.state import build_state
+    from datetime import datetime, timezone, timedelta
+    BJ = timezone(timedelta(hours=8))
+    db = Db(str(tmp_path / "s.db")); db.init()
+    now = datetime(2026, 6, 26, 23, 0, tzinfo=BJ)
+    # 远古场(应被滤) + 今晚未开球场(应在)
+    db.upsert_match("100", "老队A", "老队B", "OldA", "OldB", None, "6.20 20:00", "6.20 19:00")
+    db.upsert_match("101", "甲", "乙", "Jia", "Yi", None, "6.27 02:00", "6.27 01:00")
+    st = build_state(db, {}, now)
+    kos = [m["ko_bj"] for m in st["matches_today"]]
+    assert "6.20 20:00" not in kos      # 远古被滤
+    assert "6.27 02:00" in kos          # 今晚夜场保留(跨午夜不误删)
+    assert all("view_status" in m for m in st["matches_today"])

@@ -218,6 +218,28 @@ def test_get_decisions_empty(tmp_path):
     assert isinstance(body["ts"], str)
 
 
+def test_api_decisions_filters_expired_and_tags(tmp_path):
+    """GET /api/decisions 经 decisions_view: 远古场被滤, 远未来场保留+附 view_status。"""
+    db_path = tmp_path / "w.db"
+    db = Db(str(db_path)); db.init()
+    # 用 "1.01"(年初) 与 "12.31"(年末) 相对当前真实日期: A 必 expired, B 必 upcoming,
+    # 免依赖 freeze 时间库。
+    db.save_decisions([
+        {"match_key": "A", "ko_bj": "1.01 00:00"},   # 远古 → expired, 应被滤掉
+        {"match_key": "B", "ko_bj": "12.31 23:59"},  # 远未来 → upcoming, 保留
+    ])
+    cfg = load_config("nope.toml")
+    app = create_app(db_path=str(db_path), cfg=cfg, require_auth=False)
+    client = TestClient(app)
+    r = client.get("/api/decisions")
+    assert r.status_code == 200
+    body = r.json()
+    keys = [d["match_key"] for d in body["decisions"]]
+    assert "A" not in keys           # 远古场被滤
+    assert "B" in keys
+    assert all("view_status" in d for d in body["decisions"])
+
+
 def test_refresh_no_snapshot_branch(tmp_path, monkeypatch):
     """无 zucai 快照 → {accepted: false, reason}, 不抛错, 不调 poll_once。"""
     db_path = tmp_path / "norefresh.db"
