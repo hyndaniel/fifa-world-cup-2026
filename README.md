@@ -133,10 +133,30 @@ pip install -r requirements.txt
 python3 -m pytest -q                 # fixture 单测，不联网
 python3 -m backend.run               # http://localhost:8000 (本地 IP 足彩可直连)
 python3 tools/odds_watch.py --once   # 抓+缓存竞彩
+python3 tools/odds_watch.py --consensus  # 竞彩 + 欧盘共识(500 全47家)一把抓
 ```
 
-> 订阅制约束：LLM 推理只能在本地 macOS 登录态下跑（无 API key），HK 后端不直调模型；
-> Polymarket 本地受 GFW 限制，经 remote-agent(HK) 抓回。
+### 一把刷三源 + 推看板：`refresh_all`
+
+本地**单一定时任务**刷三源(竞彩 sporttery + 欧盘 500翻页 + **Poly 经本地 7897 代理直抓**)→ 写本地缓存 → 按队名对齐到 `zucai_num`、算变化+分歧 → POST HK 看板两端点(`/api/ingest/zucai` 竞彩raw、`/api/ingest/odds` 赔率面板)。**取代** `collect_zucai`。
+
+```bash
+WC_HTTPS_PROXY=http://127.0.0.1:7897 WC_INGEST_PW=<看板密码> \
+  python3 tools/refresh_all.py --once            # 跑一次
+python3 tools/refresh_all.py --once --dry-run     # 抓+对齐但不推 HK(冒烟)
+```
+
+**go-live(触及生产/实盘机,需手动确认):**
+```bash
+# 1) 部署 HK 新端点 + 前端赔率面板: 触发 /fifa-deploy(docker build)
+# 2) 切 launchd: 编辑 deploy/com.wc.refresh-all.plist 里的 REPO/密码 → 装新卸旧
+launchctl unload ~/Library/LaunchAgents/com.wc.collect-zucai.plist
+cp deploy/com.wc.refresh-all.plist ~/Library/LaunchAgents/   # 改好 REPO/密码
+launchctl load ~/Library/LaunchAgents/com.wc.refresh-all.plist
+```
+
+> 订阅制约束：LLM 推理只能在本地 macOS 登录态下跑（无 API key），HK 后端不直调模型。
+> Polymarket 本地受 GFW 限制——经**本地 7897 代理**(Clash/日本节点)直抓即可，已不再依赖 remote-agent(HK)。
 
 ## 部署到 AWS-HK
 
