@@ -28,15 +28,38 @@ def test_apply_multi_deviation_honors_all_pins():
     assert abs(out["d"] - 20.0) < 0.01   # 剩余 100-50-30 全归未钉的 d
 
 
-def test_build_v2_prediction_shape():
-    sheet = {"match_key": "M1", "baseline": {"h": 30.0, "d": 30.0, "a": 40.0}}
-    out = build_v2_prediction(sheet, [{"outcome": "a", "to": 64.0, "reason": "r"}], "乱",
-                              ["默契平"])
-    assert out["match_key"] == "M1"
-    assert out["reliability"] == "乱"
+def test_apply_deviations_ttg_multikey_sum_100():
+    base = {"0": 10.0, "1": 20.0, "2": 30.0, "3": 25.0, "4": 15.0}
+    out = apply_deviations(base, [{"outcome": "3", "to": 35.0, "reason": "r"}],
+                           keys=tuple(base))
+    assert abs(sum(out.values()) - 100.0) < 0.01
+    assert abs(out["3"] - 35.0) < 0.6   # 钉住 35(归一后±四舍五入)
+    assert set(out) == set(base)
+
+
+def test_apply_deviations_out_of_keys_pin_keeps_sum_100():
+    base = {"0": 25.0, "1": 25.0, "2": 25.0, "3": 25.0}
+    out = apply_deviations(base, [{"outcome": "5", "to": 40.0, "reason": "x"}],
+                           keys=tuple(base))
+    assert abs(sum(out.values()) - 100.0) < 0.1   # 不再 desum 到 60
+    assert "5" in out and abs(out["5"] - 40.0) < 0.6
+
+
+def test_build_v2_prediction_markets_shape():
+    out = build_v2_prediction("M1", "乱", ["默契平"], {
+        "had": {"baseline": {"h": 30.0, "d": 30.0, "a": 40.0},
+                "deviations": [{"outcome": "a", "to": 64.0, "reason": "韩国只需平"}]},
+        "hhad": {"baseline": {"h": 40.0, "d": 30.0, "a": 30.0}, "deviations": [], "line": -1},
+        "ttg": {"baseline": {"0": 20.0, "1": 30.0, "2": 30.0, "3": 20.0}, "deviations": []}})
+    assert out["match_key"] == "M1" and out["reliability"] == "乱"
     assert out["scenarios"] == ["默契平"]
-    assert abs(sum(out["v2"].values()) - 100.0) < 0.01
-    assert out["baseline"] == {"h": 30.0, "d": 30.0, "a": 40.0}  # 基线原值留存
+    had = out["markets"]["had"]
+    assert had["baseline"] == {"h": 30.0, "d": 30.0, "a": 40.0}   # 基线原值留存
+    assert abs(sum(had["v2"].values()) - 100.0) < 0.01 and had["v2"]["a"] > had["v2"]["h"]
+    assert out["markets"]["hhad"]["line"] == -1
+    ttg = out["markets"]["ttg"]
+    assert "ou" in ttg and "2.5" in ttg["ou"]
+    assert abs(ttg["ou"]["2.5"]["over"] - 20.0) < 0.6            # 仅 P(3)=20
 
 
 def test_record_and_get_v2_prediction():

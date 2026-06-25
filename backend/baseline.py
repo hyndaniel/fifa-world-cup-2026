@@ -8,22 +8,29 @@ DEFAULT_WEIGHTS = {"zucai": 0.20, "poly": 0.45, "consensus": 0.35}
 _KEYS = ("h", "d", "a")
 
 
-def zucai_had_devig(had: dict) -> dict:
-    """竞彩 had 欧赔 {h,d,a} → 去水概率 %。隐含=1/赔率,再乘法归一到 100。"""
-    implied = {k: 1.0 / float(had[k]) for k in _KEYS if had.get(k)}
+def zucai_odds_devig(odds: dict, keys=_KEYS) -> dict:
+    """竞彩欧赔 → 去水概率 %。隐含=1/赔率, 乘法归一到 100。keys 限定参与的 outcome。"""
+    implied = {k: 1.0 / float(odds[k]) for k in keys if odds.get(k)}
     return {k: round(v, 1) for k, v in devig(implied).items()}
 
 
-def blend_had(sources: dict, weights: dict = DEFAULT_WEIGHTS) -> dict:
-    """多源去水概率加权融合;只用在场源、权重重新归一;输出重新归一到 100。"""
+def zucai_had_devig(had: dict) -> dict:
+    """胜平负三选一去水(zucai_odds_devig 瘦封装, 向后兼容)。"""
+    return zucai_odds_devig(had, _KEYS)
+
+
+def blend(sources: dict, keys, weights: dict = DEFAULT_WEIGHTS) -> dict:
+    """多源去水概率加权融合;只用在场源、权重重新归一;输出按 keys 归一到 100。"""
     present = {s: weights[s] for s in sources if s in weights and sources[s]}
     wsum = sum(present.values())
     if wsum <= 0:
         return {}
-    raw = {k: sum(sources[s][k] * present[s] for s in present) / wsum for k in _KEYS}
+    raw = {k: sum(sources[s].get(k, 0.0) * present[s] for s in present) / wsum for k in keys}
     tot = sum(raw.values())
+    if tot <= 0:
+        return {}
     out = {k: round(v / tot * 100, 1) for k, v in raw.items()}
-    # 独立四舍五入会让三项之和偏离 100(可达 ±0.1+),把残差并入最大项,严格归一到 100。
+    # 独立四舍五入会让和偏离 100,把残差并入最大项,严格归一。
     residual = round(100.0 - sum(out.values()), 1)
     if residual:
         kmax = max(out, key=out.get)
@@ -31,12 +38,17 @@ def blend_had(sources: dict, weights: dict = DEFAULT_WEIGHTS) -> dict:
     return out
 
 
-def confidence(sources: dict) -> dict:
+def blend_had(sources: dict, weights: dict = DEFAULT_WEIGHTS) -> dict:
+    """胜平负融合(blend 瘦封装, 向后兼容)。"""
+    return blend(sources, _KEYS, weights)
+
+
+def confidence(sources: dict, keys=_KEYS) -> dict:
     """覆盖几个源 + 跨源最大极差。3源=hard/2=medium/1=soft/0=none。"""
     n = len(sources)
     label = {3: "hard", 2: "medium", 1: "soft"}.get(n, "none")
     spread = 0.0
-    for k in _KEYS:
+    for k in keys:
         vals = [s[k] for s in sources.values() if k in s]
         if len(vals) >= 2:
             spread = max(spread, max(vals) - min(vals))
@@ -50,27 +62,68 @@ def _latest_payload(conn, source, match_key):
     return json.loads(r[0]) if r else None
 
 
-def baseline_had(cache_path: str, match_key: str, weights: dict = DEFAULT_WEIGHTS):
-    """从 odds_cache.db 装配一场胜平负基线表。无任何源 → None。"""
+HAD_CFG = {"market": "had", "pool": "had", "keys": _KEYS, "weights": DEFAULT_WEIGHTS}
+HHAD_CFG = {"market": "hhad", "pool": "hhad", "keys": _KEYS, "weights": {"zucai": 1.0}}
+TTG_CFG = {"market": "ttg", "pool": "ttg", "keys": None, "weights": {"zucai": 1.0}}
+
+
+def _market_keys(cfg, payloads):
+    """固定 keys 直接返回;keys=None(ttg)从竞彩 payload 动态取并按数值排序。"""
+    if cfg["keys"] is not None:
+        return cfg["keys"]
+    pool = (payloads.get("zucai") or {}).get(cfg["pool"]) or {}
+    return tuple(sorted((k for k in pool if k != "line"), key=lambda x: int(x)))
+
+
+def baseline_market(cache_path, match_key, cfg, weights=None):
+    """从 odds_cache 装配一场某盘口基线表。无任何源 → None。
+    返回 {match_key, market, baseline, sources, confidence[, line]}。"""
+    weights = weights or cfg["weights"]
     conn = sqlite3.connect(cache_path)
     try:
-        sources = {}
-        z = _latest_payload(conn, "zucai", match_key)
-        if z and z.get("had"):
-            sources["zucai"] = zucai_had_devig(z["had"])
-        p = _latest_payload(conn, "poly", match_key)
-        if p and p.get("poly_devig"):
-            sources["poly"] = {k: round(float(p["poly_devig"][k]), 1) for k in _KEYS
-                               if p["poly_devig"].get(k) is not None}
-        c = _latest_payload(conn, "consensus", match_key)
-        if c and c.get("had"):
-            sources["consensus"] = zucai_had_devig(c["had"])  # 共识 had 也是欧赔,同路去水
+        raw = {s: _latest_payload(conn, s, match_key) for s in ("zucai", "poly", "consensus")}
     finally:
         conn.close()
+    keys = _market_keys(cfg, raw)
+    pool, sources, line = cfg["pool"], {}, None
+    z = raw.get("zucai")
+    if z and z.get(pool):
+        zp = z[pool]
+        line = zp.get("line") if isinstance(zp, dict) else None
+        sources["zucai"] = zucai_odds_devig(zp, keys)
+    # poly / consensus 仅对胜平负有对应定价(我们的源里 hhad/ttg 无)
+    if pool == "had":
+        p = raw.get("poly")
+        if p and p.get("poly_devig"):
+            sources["poly"] = {k: round(float(p["poly_devig"][k]), 1) for k in keys
+                               if p["poly_devig"].get(k) is not None}
+        c = raw.get("consensus")
+        if c and c.get("had"):
+            sources["consensus"] = zucai_odds_devig(c["had"], keys)
     if not sources:
         return None
-    return {"match_key": match_key, "baseline": blend_had(sources, weights),
-            "sources": sources, "confidence": confidence(sources)}
+    out = {"match_key": match_key, "market": cfg["market"],
+           "baseline": blend(sources, keys, weights),
+           "sources": sources, "confidence": confidence(sources, keys)}
+    if line is not None:
+        out["line"] = line
+    return out
+
+
+def baseline_had(cache_path: str, match_key: str, weights: dict = DEFAULT_WEIGHTS):
+    """胜平负基线(baseline_market 瘦封装, 向后兼容)。无任何源 → None。"""
+    return baseline_market(cache_path, match_key, HAD_CFG, weights)
+
+
+def _hhad_outcome(home_goals: int, away_goals: int, line) -> str:
+    """让球结算: (主 + line - 客) 的符号 → h/d/a。line=主队让球数(主让一球记 -1)。
+    整数盘三分法, 无 push。"""
+    adj = home_goals + float(line) - away_goals
+    if adj > 0:
+        return "h"
+    if adj == 0:
+        return "d"
+    return "a"
 
 
 _RESULTS_SCHEMA = """CREATE TABLE IF NOT EXISTS match_results (
@@ -113,3 +166,44 @@ def get_result(cache_path: str, match_key: str):
     finally:
         conn.close()
     return r[0] if r else None
+
+
+def over_under(dist: dict, lines=(2.5,)) -> dict:
+    """从总进球分布派生大小球。P(大 L)=Σ_{k>L} P(k)。返回 {"2.5":{"over":%,"under":%}}。"""
+    out = {}
+    for L in lines:
+        over = round(sum(v for k, v in dist.items() if int(k) > L), 1)
+        out[str(L)] = {"over": over, "under": round(100.0 - over, 1)}
+    return out
+
+
+def _ttg_outcome(home_goals: int, away_goals: int, cap: int = 7) -> str:
+    """总进球 actual: min(主+客, cap) → 字符串键('7'=7+)。"""
+    return str(min(home_goals + away_goals, cap))
+
+
+def get_result_goals(cache_path: str, match_key: str):
+    """取某场实际进球 (home, away);无 → None。"""
+    conn = sqlite3.connect(cache_path)
+    try:
+        conn.execute(_RESULTS_SCHEMA)
+        r = conn.execute("SELECT home_goals, away_goals FROM match_results WHERE match_key=?",
+                         (match_key,)).fetchone()
+    finally:
+        conn.close()
+    return (r[0], r[1]) if r else None
+
+
+# 盘口注册表 + 实际结果派生(报告/回测共用单点真相, 避免各自重写)
+MARKETS = (("had", HAD_CFG), ("hhad", HHAD_CFG), ("ttg", TTG_CFG))
+
+
+def _actual_for(market, hg, ag, line=None):
+    """按盘口把实际进球派生成该盘口 actual 键。让球缺 line → None(不计分)。"""
+    if market == "had":
+        return _outcome_key(hg, ag)
+    if market == "hhad":
+        return _hhad_outcome(hg, ag, line) if line is not None else None
+    if market == "ttg":
+        return _ttg_outcome(hg, ag)
+    return None

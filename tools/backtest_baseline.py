@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""回测:对所有「有基线+有结果」的场,算市场基线的 Brier + 校准,立基准线。
+"""回测:对所有「有基线+有结果」的场,逐盘口算市场基线的 Brier,立基准线。
 
 用法: python3 tools/backtest_baseline.py [--cache .cache/odds_cache.db]
 """
@@ -11,10 +11,12 @@ import sys
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO not in sys.path:
     sys.path.insert(0, REPO)
-from backend.baseline import baseline_had, get_result  # noqa: E402
-from backend.scoring import brier_multi, calibration_buckets  # noqa: E402
+from backend.baseline import baseline_market, MARKETS, get_result_goals, _actual_for  # noqa: E402
+from backend.scoring import brier_multi  # noqa: E402
 
 DEFAULT_CACHE = os.environ.get("WC_ODDS_CACHE", os.path.join(REPO, ".cache", "odds_cache.db"))
+
+MARKET_NAMES = {"had": "胜平负", "hhad": "让球", "ttg": "总进球"}
 
 
 def _result_keys(cache_path):
@@ -30,39 +32,43 @@ def _result_keys(cache_path):
 
 
 def run_backtest(cache_path: str) -> dict:
-    per_match, briers, cal_preds = [], [], []
+    out = {m: {"n": 0, "market_brier": None, "per_match": []} for m, _ in MARKETS}
     for mk in _result_keys(cache_path):
-        bl = baseline_had(cache_path, mk)
-        actual = get_result(cache_path, mk)
-        if not bl or not actual:
+        goals = get_result_goals(cache_path, mk)
+        if not goals:
             continue
-        b = brier_multi(bl["baseline"], actual)
-        briers.append(b)
-        per_match.append({"match_key": mk, "baseline": bl["baseline"],
-                          "actual": actual, "brier": b})
-        # 校准:记录"基线给实际结果的概率" vs 是否发生(发生=1)
-        cal_preds.append((bl["baseline"].get(actual, 0.0), 1))
-    n = len(briers)
-    return {
-        "n": n,
-        "market_brier": round(sum(briers) / n, 4) if n else None,
-        "per_match": per_match,
-        "calibration": calibration_buckets(cal_preds) if cal_preds else [],
-    }
+        hg, ag = goals
+        for market, cfg in MARKETS:
+            bl = baseline_market(cache_path, mk, cfg)
+            if not bl:
+                continue
+            actual = _actual_for(market, hg, ag, bl.get("line"))
+            if actual is None:
+                continue
+            b = brier_multi(bl["baseline"], actual)
+            out[market]["per_match"].append({"match_key": mk, "baseline": bl["baseline"],
+                                             "actual": actual, "brier": b})
+    for market, _ in MARKETS:
+        briers = [p["brier"] for p in out[market]["per_match"]]
+        out[market]["n"] = len(briers)
+        out[market]["market_brier"] = round(sum(briers) / len(briers), 4) if briers else None
+    return out
 
 
 def main():
-    ap = argparse.ArgumentParser(description="回测市场基线 Brier 基准")
+    ap = argparse.ArgumentParser(description="回测逐盘口市场基线 Brier 基准")
     ap.add_argument("--cache", default=DEFAULT_CACHE)
     a = ap.parse_args()
     out = run_backtest(a.cache)
-    print(f"配对场数: {out['n']}")
-    if out["n"]:
-        print(f"市场基线 Brier 基准: {out['market_brier']}  (越低越准, 0=完美, ~0.66=乱猜三选一)")
-        for m in out["per_match"]:
-            print(f"  {m['match_key']}: 基线={m['baseline']} 实际={m['actual']} Brier={m['brier']}")
-    else:
-        print("无「基线+结果」配对(先 record_result 录入实际比分)。")
+    for market, _ in MARKETS:
+        data = out[market]
+        print(f"== {MARKET_NAMES[market]} == 配对 {data['n']} 场")
+        if data["n"]:
+            print(f"  市场基线 Brier 基准: {data['market_brier']}")
+            for m in data["per_match"]:
+                print(f"    {m['match_key']}: 实际={m['actual']} Brier={m['brier']}")
+        else:
+            print("  无「基线+结果」配对(先 record_result)。")
 
 
 if __name__ == "__main__":
