@@ -19,6 +19,7 @@ Basic-Auth 依赖: 密码取 cfg["server"]["password"]。关掉鉴权 (测试用
   - cfg["server"]["password"] 为空。
 鉴权开启时, 仅 /api/* 需要 (静态资源放行); 用户名任意, 比对密码。
 """
+import logging
 import os
 import secrets
 import threading
@@ -33,6 +34,8 @@ from backend.db import Db
 from backend import poller
 from backend import reports as reports_mod
 from backend.state import BJ, build_state, datetime
+
+log = logging.getLogger(__name__)
 
 
 class BetIn(BaseModel):
@@ -159,11 +162,16 @@ def create_app(db_path="wc.db", cfg=None, reports_dir="reports",
         except Exception:  # noqa: BLE001
             n = 0
 
+        # 另存一份原始信封 (source='zucai_raw'), 供 /api/refresh 回放: refresh 经
+        # poll_once → parse_matches 需要原始 {value:{matchInfoList:...}} 形状, 而 poller
+        # 每场存的 source='zucai' 是已解析的 ZucaiMatch dict (parse_matches 吃不动)。
+        db.save_snapshot(0, "zucai_raw", body)
+
         def work():
             try:
                 poller.poll_once(db, cfg, zucai_fetch=lambda: body)
-            except Exception as e:  # noqa: BLE001
-                print("ingest poll_once 失败:", e)
+            except Exception:  # noqa: BLE001
+                log.exception("ingest poll_once 失败")
 
         threading.Thread(target=work, daemon=True).start()
         return {"accepted": True, "matches": n}
@@ -203,20 +211,22 @@ def create_app(db_path="wc.db", cfg=None, reports_dir="reports",
         }
 
     # ---------------- /api/refresh ----------------
-    # 价值"重抓+刷新"按钮用: 取最新一条 source='zucai' 的快照 payload, 后台经
-    # poll_once(注入此 payload) 重跑 (内部重连 Poly 刷去水 → 重算 value_points, 治
-    # "陈旧 Poly 假黄档")。无 zucai 快照 → {accepted: false, reason}, 不抛错。
+    # 价值"重抓+刷新"按钮用: 取最新一条 source='zucai_raw' 的原始信封 (由 /api/ingest/zucai
+    # 落), 后台经 poll_once(注入此原始 body) 重跑 —— poll_once 内部 parse_matches 吃原始信封
+    # + 重连 Poly 刷去水 → 重算 value_points (治"陈旧 Poly 假黄档")。
+    # 注意: 绝不能用 source='zucai'(那是 poller 每场存的已解析 ZucaiMatch dict, parse_matches
+    # 吃不动 → 静默空跑)。无原始信封 → {accepted: false, reason}, 不抛错。
     @app.post("/api/refresh", dependencies=[Depends(auth_dep)])
     def api_refresh():
-        snapshot = db.latest_snapshot("zucai")
+        snapshot = db.latest_snapshot("zucai_raw")
         if snapshot is None:
             return {"accepted": False, "reason": "no zucai snapshot"}
 
         def work():
             try:
                 poller.poll_once(db, cfg, zucai_fetch=lambda: snapshot)
-            except Exception as e:  # noqa: BLE001
-                print("refresh poll_once 失败:", e)
+            except Exception:  # noqa: BLE001
+                log.exception("refresh poll_once 失败")
 
         threading.Thread(target=work, daemon=True).start()
         return {"accepted": True}

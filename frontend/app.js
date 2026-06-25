@@ -128,6 +128,7 @@ function tickCountdown() {
 function flagBadge(flag) {
   if (flag === "green") return { dot: "🟢", label: "真 +EV", cls: "flag-green" };
   if (flag === "yellow") return { dot: "🟡", label: "接近公允", cls: "flag-yellow" };
+  if (flag === "red") return { dot: "🔴", label: "明显 -EV", cls: "flag-red" };
   return { dot: "⚪", label: "跳过", cls: "flag-skip" };
 }
 

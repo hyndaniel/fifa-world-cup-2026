@@ -104,13 +104,15 @@ CST = ET + 12/13。判断"今晚/明天/是否已开赛"**必须看 ET 当下**,
      ```
      python3 -c "from backend.baseline import baseline_market, HAD_CFG, HHAD_CFG, TTG_CFG; print(baseline_market('.cache/odds_cache.db','<match_key>',HAD_CFG)); print(baseline_market('.cache/odds_cache.db','<match_key>',HHAD_CFG)); print(baseline_market('.cache/odds_cache.db','<match_key>',TTG_CFG))"
      ```
-  2. 中立事实卡(确证新闻,恒无首发):
+  2. 中立事实卡(确证新闻,恒无首发)。**关键:`match_fact_card` 第二参经 `db.match()` 按
+     `zucai_num` 查 `data/wc.db`,不是 odds_cache 的 `<match_key>`("X vs Y")——直接传 match_key
+     会查空、事实卡恒为空、v2 偏离链路空转。必须先用 home_cn/away_cn 反查该场 zucai_num:**
      ```
-     python3 -c "from backend.db import Db; from backend.intel import match_fact_card; from datetime import datetime, timezone, timedelta; print(match_fact_card(Db('data/wc.db'), '<match_key>', datetime.now(timezone(timedelta(hours=8)))))"
+     python3 -c "from backend.db import Db; from backend.intel import match_fact_card; from datetime import datetime, timezone, timedelta; db=Db('data/wc.db'); zn=next((m['zucai_num'] for m in db.matches() if m['home_cn']=='<home_cn>' and m['away_cn']=='<away_cn>'), None); print(match_fact_card(db, zn, datetime.now(timezone(timedelta(hours=8)))) if zn else {'teams': [], 'note': '该场未在 wc.db.matches, 事实卡缺位'})"
      ```
-     (事实来自 watchlist 覆盖队的 enrich 新闻——本地 `tools/collect_enrich.py` 推到 HK,
-     v2 经 `match_fact_card` 读;**注意:设计文档提到的 `tools/save_intel.py` 在本仓库实为
-     `collect_enrich.py` + `match_fact_card` 这条链,无独立 save_intel 脚本。**)
+     (事实来自 enrich 表,两条入口:① watchlist 覆盖队的 `tools/collect_enrich.py` 推 Google-News
+     新闻到 HK;② deep-search 确证事实经 `tools/save_intel.py`(`--db` 指主 checkout 的 `data/wc.db`、
+     `--json` 为抽取后的 `{team_cn:[facts]}`)写进 enrich。v2 两者都经 `match_fact_card` 读,stale 阈值 48h。)
 - **绝不**把 v1 的 score/probs/依据放进这个派单。
 - v2 落库(它自己跑 build_v2_prediction → record_v2_prediction):
   ```
@@ -119,8 +121,8 @@ CST = ET + 12/13。判断"今晚/明天/是否已开赛"**必须看 ET 当下**,
 - 产物含:逐盘口 baseline + 有据偏离(每条带 `factor_source`)、整场靠谱度(稳/中/乱)、剧本标签。
 
 **Pass 价值 = `odds-value-analyst`(green/yellow + 最不亏腿):**
-- 任务:对每场每选项算 value = 竞彩欧赔 × Poly去水(p_true),EV%,分档(🟢≥1.03 / 🟡0.97–1.03 / ⚪<0.97),
-  点出"最不亏"那条腿。它从 `.cache/odds_cache.db` 读 Poly(不自抓)。
+- 任务:对每场每选项算 value = 竞彩欧赔 × Poly去水(p_true),EV%,分档(🟢green≥1.03 / 🟡yellow0.97–1.03 /
+  🔴red<0.97明显-EV;⚪skip=陷阱桶/缺对应 Poly 线自动跳过),点出"最不亏"那条腿。它从 `.cache/odds_cache.db` 读 Poly(不自抓)。
 - 落盘:它自己维护 `reports/盘口下注复盘.md`。
 
 > 三条独立性的实现 = 三个独立 subagent 调用。派 v2 前**自检**:这份 prompt 里有没有任何
@@ -141,9 +143,11 @@ python3 tools/v2_report.py
 看板**原样存、原样回吐**。
 
 1. **取看板地址 + 密码(现取,不打印、不入库):**
-   从仓库根 `config.toml` 读 `[server] password`,与看板基址组 basic auth——**镜像
-   `tools/collect_zucai.py` / `collect_enrich.py` 的 `WC_INGEST_URL` + `WC_INGEST_PW` 惯例**。
-   - 看板基址即现有 ingest 通道用的那个(如 `http://18.166.71.60:8000`)。
+   从仓库根 `config.toml` 读 `[server] password`,与看板基址组 basic auth。
+   - `WC_INGEST_URL` 在本步取**看板基址、不含路径**(如 `http://18.166.71.60:8000`),与
+     `tools/collect_enrich.py` 一致。**注意 `tools/collect_zucai.py` 把 `WC_INGEST_URL` 当成含
+     `/api/ingest/zucai` 的全路径用,语义不同——本步勿沿用 zucai 那份导出值;** 下面 POST 脚本
+     已兜底:先 `split("/api/ingest")[0]` 剥掉可能误带的路径再拼。`WC_INGEST_PW` = 看板密码。
    - 密码当作 secret:**绝不 print 到对话、绝不写进任何 reports/*.md 或库**(见项目记忆惯例)。
    - 用 `os.environ["WC_INGEST_PW"]` 或临时读 `config.toml` 进变量,只在 POST 的 Authorization 头里用一次。
 
@@ -172,7 +176,8 @@ python3 tools/v2_report.py
    - `v2` 块取自 `get_v2_prediction('.cache/odds_cache.db', key)`:`probs` = had 的 `markets.had.v2`,
      `reliability` = `reliability`,`scenarios` = `scenarios`,`deviated` = had 有无 `deviations`。
    - `value` 块取自 odds-value-analyst 这场的结论(verdict / best_leg / legs)。
-   - `flag` ∈ {green, yellow, skip},沿用 `value.py` 1.03/0.97 分档。
+   - `flag` ∈ {green, yellow, red, skip}(`value.py` 实产四档:≥1.03 green / 0.97–1.03 yellow /
+     <0.97 red(明显-EV) / 陷阱桶 skip);**别把 red 折叠成 skip**——前端 🔴 单独显示,守诚实定位。
    - 缺哪块就**省略哪块**(别塞空壳),前端会显示"未出/—"。
 
 3. **POST 到看板:**
@@ -188,7 +193,7 @@ python3 tools/v2_report.py
    ```
    python3 - <<'PY'
    import base64, json, os, urllib.request
-   base = os.environ["WC_INGEST_URL"].rstrip("/")   # 看板基址,不含路径
+   base = os.environ["WC_INGEST_URL"].split("/api/ingest")[0].rstrip("/")  # 剥误带路径→纯基址
    pw   = os.environ["WC_INGEST_PW"]                 # 从 config.toml [server].password 现取,不打印
    user = os.environ.get("WC_INGEST_USER", "admin")
    decisions = [ ... ]                               # 上面 join 出的 Decision 列表

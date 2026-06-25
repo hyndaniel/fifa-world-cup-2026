@@ -13,6 +13,7 @@
   --yellow: #e6b04a;
   --yellow-bg: rgba(230, 176, 74, 0.12);
   --red: #ef5e6b;
+  --red-bg: rgba(239, 94, 107, 0.12);
   --accent: #4c8dff;
   --radius: 12px;
   --shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
@@ -1106,4 +1107,22 @@ main {
   gap: 4px 10px;
   font-variant-numeric: tabular-nums;
   color: var(--text-dim);
+}
+
+/* 🔴 明显 -EV (value.py 的 red 档): 与 green/yellow 同结构, 红色系, 别再被吞成 ⚪跳过 */
+.radar-item.flag-red {
+  border-left-color: var(--red);
+}
+.flag-red .ri-devig {
+  color: var(--red);
+}
+.ri-badge.flag-red {
+  background: var(--red-bg);
+  color: var(--red);
+}
+.dc-best.flag-red {
+  border-left-color: var(--red);
+}
+.dc-leg.flag-red {
+  border-left-color: var(--red);
 }

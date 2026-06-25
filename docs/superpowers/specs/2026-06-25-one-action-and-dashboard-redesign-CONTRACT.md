@@ -51,7 +51,7 @@
 }
 ```
 
-字段缺失约定：任一块（v1/v2/value）可整块缺失 → 前端该区显示"—"或"未出"，**不崩**。`probs` 可缺。`flag` ∈ {green,yellow,skip}，沿用现有 `flagBadge` 语义（🟢真+EV/🟡接近公允/⚪跳过）。
+字段缺失约定：任一块（v1/v2/value）可整块缺失 → 前端该区显示"—"或"未出"，**不崩**。`probs` 可缺。`flag` ∈ {green,yellow,red,skip}，沿用 `flagBadge` 语义（🟢真+EV/🟡接近公允/🔴明显-EV/⚪跳过；`value.py` 实产四档，red 别折叠成 skip）。
 
 ## 2. 看板端点（C 实现，FastAPI，沿用 `auth_dep` 鉴权）
 

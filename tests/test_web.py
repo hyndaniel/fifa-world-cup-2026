@@ -118,7 +118,7 @@ def test_watchlist_get_post_delete(client):
 
 
 def test_ingest_zucai_accepts_and_counts(client, monkeypatch):
-    c, _ = client
+    c, db = client
     # 拦掉后台 poll_once(避免真连 Polymarket), 只验证接口受理 + 计数
     import backend.poller as poller_mod
     seen = []
@@ -133,6 +133,8 @@ def test_ingest_zucai_accepts_and_counts(client, monkeypatch):
     body = r.json()
     assert body["accepted"] is True
     assert body["matches"] == 3  # 2 + 1
+    # 原始信封另存为 zucai_raw, 供 /api/refresh 回放 (形状即原始 body, 非已解析 dict)
+    assert db.latest_snapshot("zucai_raw") == payload
 
 
 def test_ingest_enrich_accepts(tmp_path):
@@ -238,21 +240,30 @@ def test_refresh_no_snapshot_branch(tmp_path, monkeypatch):
 
 
 def test_refresh_triggers_poll_once_with_snapshot(client, monkeypatch):
-    """有 zucai 快照 → {accepted: true}; 后台 poll_once 被调, 且注入的 payload 即快照。"""
+    """有 zucai_raw 原始信封 → refresh 注入的 payload 能被 parse_matches 解析出 >=1 场。
+
+    回归闸: 旧实现 refresh 读 source='zucai'(poller 存的已解析 ZucaiMatch dict),
+    parse_matches 见 value={} → 得 0 场 → 刷新静默空跑, 永不重连 Poly。本测试用
+    真实原始信封 + 真 parse_matches 断言 >=1, 若再退回错形状会变红。
+    """
+    import json
+    import pathlib
     c, db = client
-    # 落一条 zucai 快照
-    mid = db.upsert_match("周一013", "西", "佛", "Spain", "Cabo Verde",
-                          "s", "6.16 00:00", "23:00")
-    db.save_snapshot(mid, "zucai", {"value": {"matchInfoList": []}, "tag": "snap1"})
+    raw = json.loads(
+        (pathlib.Path(__file__).parent / "fixtures" / "zucai_sample.json").read_text("utf-8")
+    )
+    db.save_snapshot(0, "zucai_raw", raw)
 
     import backend.poller as poller_mod
+    from backend import sporttery
     captured = {}
 
     def fake_poll(db_, cfg_, **kw):
-        # 抓住注入的 zucai_fetch 返回值, 防联网
+        # 真 parse 注入的 payload: 验证回放的是原始信封形状(而非已解析 dict), 防联网
         f = kw.get("zucai_fetch")
-        captured["payload"] = f() if f else None
-        return 0
+        payload = f() if f else None
+        captured["n"] = len(sporttery.parse_matches(payload))
+        return captured["n"]
 
     monkeypatch.setattr(poller_mod, "poll_once", fake_poll)
 
@@ -261,11 +272,11 @@ def test_refresh_triggers_poll_once_with_snapshot(client, monkeypatch):
     assert r.json()["accepted"] is True
     # 后台线程异步, 给它一点时间
     import time as _t
-    for _ in range(50):
-        if "payload" in captured:
+    for _ in range(100):
+        if "n" in captured:
             break
         _t.sleep(0.01)
-    assert captured.get("payload", {}).get("tag") == "snap1"
+    assert captured.get("n", 0) >= 1  # 原始信封被正确回放, 解析出 >=1 场
 
 
 def test_auth_enforced_when_password_set(tmp_path):
