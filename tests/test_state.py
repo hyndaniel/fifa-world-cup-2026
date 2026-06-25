@@ -113,7 +113,58 @@ def test_watchlist_and_matches_today():
     st, db, path = _state()
     w = st["watchlist"]
     assert len(w) == 1 and w[0]["key"] == "西班牙"
-    for k in ("kind", "key", "note", "matches", "lineup", "news"):
+    for k in ("kind", "key", "note", "matches", "lineup", "news", "radar_hits"):
         assert k in w[0]
     # 两场都在 6.16
     assert len(st["matches_today"]) == 2
+
+
+def test_watchlist_enriched():
+    """team watch 富化: 关联场次 + 阵容 + 新闻 + 雷达命中。"""
+    import tempfile, os
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    db = Db(path)
+    db.init()
+    mid = db.upsert_match(
+        zucai_num="周一013", home_cn="西班牙", away_cn="佛得角",
+        home_en="Spain", away_en="Cabo Verde", poly_slug="fifwc-esp-cvi-2026-06-15",
+        ko_bj="6.16 00:00", cutoff_bj="23:00",
+    )
+    db.save_value_points(mid, [
+        {"market": "胜平负", "outcome": "主胜", "zucai_odds": 1.41,
+         "poly_prob_raw": 91.5, "poly_prob_devig": 91.0,
+         "value_raw": 1.290, "value_devig": 1.283, "ev_pct": 28.3, "flag": "green"},
+    ])
+    db.save_enrich(
+        "西班牙",
+        {"formation": "4-3-3", "players": ["佩德里", "亚马尔"],
+         "source": "test", "note": ""},
+        [{"title": "西班牙公布首发", "url": "http://x/1", "ts": "6.16"}],
+    )
+    db.add_watch(kind="team", key="西班牙", note="看好")
+    cfg = load_config("nope.toml")
+    now = datetime(2026, 6, 16, 20, 30, tzinfo=BJ)
+    st = build_state(db, cfg, now)
+
+    w = st["watchlist"]
+    assert len(w) == 1
+    item = w[0]
+    # 关联场次非空 (key 命中 home_cn)
+    assert len(item["matches"]) >= 1
+    assert item["matches"][0]["match"] == "西班牙 vs 佛得角"
+    # 阵容回来
+    assert item["lineup"] is not None
+    assert item["lineup"]["formation"] == "4-3-3"
+    assert "佩德里" in item["lineup"]["players"]
+    # 新闻回来
+    assert len(item["news"]) == 1
+    assert item["news"][0]["url"] == "http://x/1"
+    # 雷达命中非空 (绿灯, 属关联场次)
+    assert len(item["radar_hits"]) >= 1
+    hit = item["radar_hits"][0]
+    for k in ("match", "market", "outcome", "zucai_odds",
+              "poly_prob_devig", "ev_pct_devig", "flag"):
+        assert k in hit
+    assert hit["flag"] == "green"
+    assert hit["ev_pct_devig"] == 28.3

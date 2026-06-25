@@ -12,6 +12,7 @@ import uvicorn
 
 from backend.config import load_config
 from backend.db import Db
+from backend.news_enrich import run_enrich_loop
 from backend.poller import run_loop
 from backend.web import create_app
 
@@ -33,6 +34,14 @@ def main():
         ).start()
     else:
         print("[run] poll mode=ingest: 不起足彩轮询, 等住宅端 POST /api/ingest/zucai")
+
+    # 新闻富化线程 (HK app 内置: Google News RSS 大陆被墙, 必须 HK 抓;
+    # 足彩走 Mac 住宅, 各按"哪边能连"分置)。cfg.enrich.enabled 可关。
+    if (cfg.get("enrich", {}) or {}).get("enabled", True):
+        threading.Thread(
+            target=run_enrich_loop, args=(Db(db_path), cfg), daemon=True
+        ).start()
+        print("[run] 新闻富化线程已起 (Google News RSS, HK 端)")
 
     app = create_app(db_path=db_path, cfg=cfg)
     uvicorn.run(

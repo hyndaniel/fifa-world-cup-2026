@@ -131,6 +131,48 @@ function flagBadge(flag) {
   return { dot: "⚪", label: "跳过", cls: "flag-skip" };
 }
 
+// 隐含概率 = 100 / 足彩赔率 (单位 %)。无效赔率 -> null
+function impliedPct(zucaiOdds) {
+  const o = Number(zucaiOdds);
+  if (!(o > 0) || Number.isNaN(o)) return null;
+  return Math.round((100 / o) * 10) / 10;
+}
+
+// 去水概率差 = poly_prob_devig - 隐含概率 (带符号, 1 位小数)。任一缺失 -> null
+function probEdge(r) {
+  const implied = impliedPct(r.zucai_odds);
+  const poly = Number(r.poly_prob_devig);
+  if (implied == null || Number.isNaN(poly) || r.poly_prob_devig == null) return null;
+  return Math.round((poly - implied) * 10) / 10;
+}
+
+// 始终可见的紧凑对比行 DOM:
+//   足彩 {odds} (隐含 {implied}%) · Poly {poly}% 去水 · 差 {edge}% · EV {ev}%
+function buildCompareLine(r) {
+  const implied = impliedPct(r.zucai_odds);
+  const edge = probEdge(r);
+  const evDevig = r.ev_pct_devig != null ? r.ev_pct_devig : r.ev_pct;
+  const line = el("div", "ri-compare");
+
+  const seg = (text, cls) => {
+    const s = el("span", cls || "", text);
+    return s;
+  };
+
+  line.appendChild(seg(`足彩 ${fmtNum(r.zucai_odds)} (隐含 ${implied == null ? "—" : fmtNum(implied, 1)}%)`));
+  line.appendChild(seg(" · "));
+  line.appendChild(seg(`Poly ${r.poly_prob_devig == null ? "—" : fmtNum(r.poly_prob_devig, 1)}% 去水`));
+  line.appendChild(seg(" · "));
+  const edgeText = `差 ${edge == null ? "—" : fmtSignedPct(edge)}`;
+  line.appendChild(seg(edgeText, edge == null ? "" : edge >= 0 ? "ri-cmp-pos" : "ri-cmp-neg"));
+  line.appendChild(seg(" · "));
+  const evVal = Number(evDevig);
+  const evText = `EV ${evDevig == null || Number.isNaN(evVal) ? "—" : fmtSignedPct(evDevig)}`;
+  line.appendChild(seg(evText, evDevig == null || Number.isNaN(evVal) ? "" : evVal >= 0 ? "ri-cmp-pos" : "ri-cmp-neg"));
+
+  return line;
+}
+
 function renderRadar(rows) {
   const list = $("#radar-list");
   list.innerHTML = "";
@@ -148,6 +190,11 @@ function renderRadar(rows) {
     const sub = el("div", "ri-sub");
     sub.textContent = `${r.ko_bj || ""} · ${r.market || ""} ${r.outcome || ""}`;
     left.appendChild(sub);
+
+    // 始终可见的紧凑对比行: 足彩(隐含) · Poly去水 · 差 · EV
+    const cmp = buildCompareLine(r);
+    if (cmp) left.appendChild(cmp);
+
     row.appendChild(left);
 
     row.appendChild(el("div", "ri-odds", fmtNum(r.zucai_odds)));
@@ -163,12 +210,19 @@ function renderRadar(rows) {
     // 点开详情
     const detail = el("div", "radar-detail");
     detail.hidden = true;
+    const implied = impliedPct(r.zucai_odds);
+    const edge = probEdge(r); // poly_prob_devig - implied (去水概率差)
+    const edgeCls = edge == null ? "" : edge >= 0 ? "v-pos" : "v-neg";
+    const evDevig = r.ev_pct_devig != null ? r.ev_pct_devig : r.ev_pct;
+    const evCls = evDevig == null || Number.isNaN(Number(evDevig)) ? "" : Number(evDevig) >= 0 ? "v-pos" : "v-neg";
     detail.innerHTML = `
       <div class="rd-grid">
+        <div><span class="k">隐含概率</span><span class="v">${esc(implied == null ? "—" : fmtPct(implied))}</span></div>
+        <div><span class="k">概率差(去水)</span><span class="v ${edgeCls}">${esc(edge == null ? "—" : fmtSignedPct(edge))}</span></div>
         <div><span class="k">Poly 生概率</span><span class="v">${esc(fmtPct(r.poly_prob_raw))}</span></div>
         <div><span class="k">Poly 去水概率</span><span class="v">${esc(fmtPct(r.poly_prob_devig))}</span></div>
         <div><span class="k">EV 生</span><span class="v">${esc(fmtSignedPct(r.ev_pct_raw))}</span></div>
-        <div><span class="k">EV 去水</span><span class="v">${esc(fmtSignedPct(r.ev_pct_devig != null ? r.ev_pct_devig : r.ev_pct))}</span></div>
+        <div><span class="k">EV 去水</span><span class="v ${evCls}">${esc(fmtSignedPct(evDevig))}</span></div>
         <div><span class="k">停售</span><span class="v">${esc(r.cutoff_bj || "—")}</span></div>
         <div><span class="k">建议</span><span class="v">${r.flag === "yellow" ? "薄边, 噪声内, 谨慎" : "单关小注"}</span></div>
       </div>
@@ -220,31 +274,69 @@ function renderWatchlist(items) {
       card.appendChild(ml);
     }
 
-    // 首发 (v1 多为空占位)
+    // 首发: 阵型 + 球员 chips
     if (w.lineup) {
       const lu = el("div", "wc-lineup");
-      lu.appendChild(el("div", "wc-lineup-h", "首发"));
-      lu.appendChild(el("div", "wc-lineup-body", typeof w.lineup === "string" ? w.lineup : JSON.stringify(w.lineup)));
+      const head = el("div", "wc-lineup-h", "首发");
+      const formation = typeof w.lineup === "object" ? w.lineup.formation : null;
+      if (formation) head.appendChild(el("span", "wc-formation", formation));
+      lu.appendChild(head);
+
+      const players = typeof w.lineup === "object" && Array.isArray(w.lineup.players) ? w.lineup.players : null;
+      if (players && players.length) {
+        const chips = el("div", "wc-lineup-chips");
+        for (const p of players) {
+          chips.appendChild(el("span", "wc-chip", String(p)));
+        }
+        lu.appendChild(chips);
+      } else {
+        lu.appendChild(el("div", "wc-lineup-body", typeof w.lineup === "string" ? w.lineup : JSON.stringify(w.lineup)));
+      }
+
+      const note = typeof w.lineup === "object" ? w.lineup.note : null;
+      if (note) lu.appendChild(el("div", "wc-lineup-note", note));
       card.appendChild(lu);
     } else {
       card.appendChild(el("div", "wc-lineup-pending", "首发未出炉"));
     }
 
-    // 新闻链接 (可点, 新窗口)
+    // 新闻链接 (可点, 新窗口) + 时间
     if (Array.isArray(w.news) && w.news.length) {
       const nl = el("div", "wc-news");
       for (const n of w.news) {
         const url = typeof n === "string" ? n : n.url;
         const title = typeof n === "string" ? n : n.title || n.url;
         if (!url) continue;
+        const item = el("div", "wc-news-item");
         const a = el("a", "wc-news-link");
         a.href = url;
         a.target = "_blank";
         a.rel = "noopener noreferrer";
         a.textContent = "🔗 " + title;
-        nl.appendChild(a);
+        item.appendChild(a);
+        const ts = typeof n === "object" ? n.ts : "";
+        if (ts) item.appendChild(el("span", "wc-news-ts", ts));
+        nl.appendChild(item);
       }
       card.appendChild(nl);
+    }
+
+    // 雷达命中 (radar_hits): flag 圆点 + market outcome 足彩odds EV%
+    if (Array.isArray(w.radar_hits) && w.radar_hits.length) {
+      const rh = el("div", "wc-radar");
+      rh.appendChild(el("div", "wc-radar-h", "雷达命中"));
+      for (const h of w.radar_hits) {
+        const b = flagBadge(h.flag);
+        const hit = el("div", `wc-radar-hit ${b.cls}`);
+        hit.appendChild(el("span", "wc-hit-dot", b.dot));
+        const ev = h.ev_pct_devig;
+        const evCls = ev == null || Number.isNaN(Number(ev)) ? "" : Number(ev) >= 0 ? "wc-hit-pos" : "wc-hit-neg";
+        const txt = `${h.market || ""} ${h.outcome || ""} 足彩 ${fmtNum(h.zucai_odds)}`.trim();
+        hit.appendChild(el("span", "wc-hit-txt", txt));
+        hit.appendChild(el("span", `wc-hit-ev ${evCls}`, `EV ${fmtSignedPct(ev)}`));
+        rh.appendChild(hit);
+      }
+      card.appendChild(rh);
     }
 
     wrap.appendChild(card);

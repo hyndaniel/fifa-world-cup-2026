@@ -135,6 +135,37 @@ def test_ingest_zucai_accepts_and_counts(client, monkeypatch):
     assert body["matches"] == 3  # 2 + 1
 
 
+def test_ingest_enrich_accepts(tmp_path):
+    """POST /api/ingest/enrich → 200, teams==条数; 同一 db_path 重建 Db 验证落库。"""
+    db_path = tmp_path / "enrich.db"
+    db = Db(str(db_path))
+    db.init()
+    cfg = load_config("nope.toml")
+    app = create_app(db_path=str(db_path), cfg=cfg, require_auth=False)
+    c = TestClient(app)
+
+    lineup = {"formation": "4-3-3", "players": ["A", "B"], "source": "s", "note": ""}
+    payload = {"items": [
+        {"team": "西班牙", "lineup": lineup,
+         "news": [{"title": "备战", "url": "http://x/1", "ts": ""}]},
+        {"team": "法国", "lineup": None, "news": []},
+    ]}
+    r = c.post("/api/ingest/enrich", json=payload)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["accepted"] is True
+    assert body["teams"] == 2
+
+    # 同一 db_path 重建 Db, 断言已持久化
+    db2 = Db(str(db_path))
+    esp = db2.latest_enrich("西班牙")
+    assert esp is not None
+    assert esp["lineup"]["formation"] == "4-3-3"
+    assert esp["news"][0]["title"] == "备战"
+    fra = db2.latest_enrich("法国")
+    assert fra is not None and fra["lineup"] is None and fra["news"] == []
+
+
 def test_auth_enforced_when_password_set(tmp_path):
     db_path = tmp_path / "auth.db"
     db = Db(str(db_path))
