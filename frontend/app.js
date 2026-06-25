@@ -725,20 +725,76 @@ function getMd() {
 function reportName(r) { return typeof r === "string" ? r : r.name; }
 function reportTitle(r) { return typeof r === "string" ? r : r.title || r.name; }
 
+// 报告修改时间 (毫秒); 后端给 mtime(unix 秒), 旧/无字段则 0
+function reportMtimeMs(r) {
+  const m = r && typeof r === "object" ? Number(r.mtime) : NaN;
+  return Number.isFinite(m) && m > 0 ? m * 1000 : 0;
+}
+function dayKey(d) { return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; }
+function dayLabel(ms) {
+  if (!ms) return "未知时间";
+  const d = new Date(ms), now = new Date(), yest = new Date(now);
+  yest.setDate(now.getDate() - 1);
+  if (dayKey(d) === dayKey(now)) return "今天";
+  if (dayKey(d) === dayKey(yest)) return "昨天";
+  return `${d.getMonth() + 1}月${d.getDate()}日`;
+}
+function hhmm(ms) {
+  if (!ms) return "";
+  const d = new Date(ms), p = (n) => String(n).padStart(2, "0");
+  return `${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 async function loadReportsList() {
   const tabsEl = $("#report-tabs");
   try {
     const list = await apiGet("/api/reports");
     tabsEl.innerHTML = "";
     if (!Array.isArray(list) || list.length === 0) { tabsEl.appendChild(el("div", "empty", "暂无报告")); return; }
-    list.forEach((r) => {
+    // 按修改时间倒序 (最新在前); 后端已排, 前端兜底
+    const sorted = list.slice().sort((a, b) => reportMtimeMs(b) - reportMtimeMs(a));
+    // 按天分组: 一天一标题, 报告一行一个 (标题左·时间右); 默认只露最新 3 行, 余者折叠
+    const VISIBLE = 3;
+    const groups = [];
+    let curKey = null, shown = 0;
+    sorted.forEach((r) => {
+      const ms = reportMtimeMs(r);
+      const key = ms ? dayKey(new Date(ms)) : "unknown";
+      if (key !== curKey) {
+        curKey = key;
+        const g = el("div", "report-group");
+        g.appendChild(el("div", "report-group-h", dayLabel(ms)));
+        tabsEl.appendChild(g);
+        groups.push({ el: g, rows: [] });
+      }
       const name = reportName(r);
-      const btn = el("button", "report-tab", reportTitle(r));
-      btn.dataset.name = name;
-      btn.addEventListener("click", () => openReport(name));
-      tabsEl.appendChild(btn);
+      const row = el("button", "report-tab");
+      row.dataset.name = name;
+      row.appendChild(el("span", "rt-title", reportTitle(r)));
+      const t = hhmm(ms);
+      if (t) row.appendChild(el("span", "rt-time", t));
+      row.addEventListener("click", () => openReport(name));
+      groups[groups.length - 1].el.appendChild(row);
+      groups[groups.length - 1].rows.push({ el: row, extra: shown >= VISIBLE });
+      shown++;
     });
-    openReport(state.activeReport || reportName(list[0]));
+    const hiddenCount = Math.max(0, sorted.length - VISIBLE);
+    if (hiddenCount > 0) {
+      const toggle = el("button", "report-more");
+      const apply = (collapsed) => {
+        groups.forEach((g) => {
+          const hasVisible = g.rows.some((r) => !r.extra);
+          g.el.hidden = collapsed && !hasVisible; // 整组都在折叠区 → 连日期标题一起藏
+          g.rows.forEach((r) => { r.el.hidden = collapsed && r.extra; });
+        });
+        toggle.textContent = collapsed ? `展开全部 (还有 ${hiddenCount} 篇) ▾` : "收起 ▴";
+      };
+      let collapsed = true;
+      toggle.addEventListener("click", () => { collapsed = !collapsed; apply(collapsed); });
+      tabsEl.appendChild(toggle);
+      apply(true);
+    }
+    openReport(state.activeReport || reportName(sorted[0]));
   } catch (err) {
     tabsEl.innerHTML = "";
     tabsEl.appendChild(el("div", "empty", "报告列表加载失败: " + err.message));

@@ -19,7 +19,11 @@ def _first_h1(text):
 
 
 def list_reports(reports_dir="reports"):
-    """reports/*.md → [{"name","title"}], 按 name 排序。"""
+    """reports/*.md → [{"name","title","mtime"}], 按修改时间倒序 (最新在前)。
+
+    mtime: 文件最后修改时间 (unix 秒)。前端据此分组(今天/更早)+ 显示时间,
+    并按时间排序, 解决"报告列表按文件名乱序、看不出新旧"的问题。
+    """
     base = pathlib.Path(reports_dir)
     if not base.is_dir():
         return []
@@ -39,7 +43,13 @@ def list_reports(reports_dir="reports"):
         except (OSError, UnicodeDecodeError):
             # 坏编码不应拖垮整个列表接口, 回退到文件名当标题
             pass
-        out.append({"name": name, "title": title})
+        try:
+            mtime = p.stat().st_mtime
+        except OSError:
+            mtime = 0.0
+        out.append({"name": name, "title": title, "mtime": mtime})
+    # 最新生成/更新的报告排最前
+    out.sort(key=lambda r: r["mtime"], reverse=True)
     return out
 
 
