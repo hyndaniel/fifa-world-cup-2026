@@ -217,7 +217,7 @@ def create_app(db_path="wc.db", cfg=None, reports_dir="reports",
         now_bj = datetime.now(BJ)
         return {
             "ts": now_bj.isoformat(timespec="seconds"),
-            "decisions": decisions_view(db.get_decisions(), now_bj),
+            "decisions": decisions_view(db.get_decisions(), now_bj, odds_map=db.get_odds()),
         }
 
     # ---------------- /api/refresh ----------------
