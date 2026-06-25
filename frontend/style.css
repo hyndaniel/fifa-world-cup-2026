@@ -271,6 +271,24 @@ main {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* 始终可见的紧凑对比行 */
+.ri-compare {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+  white-space: normal;
+  word-break: break-word;
+}
+.ri-compare .ri-cmp-pos {
+  color: var(--green);
+  font-weight: 600;
+}
+.ri-compare .ri-cmp-neg {
+  color: var(--red);
+  font-weight: 600;
+}
 .ri-odds {
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -338,6 +356,12 @@ main {
 .rd-grid .v {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
+}
+.rd-grid .v.v-pos {
+  color: var(--green);
+}
+.rd-grid .v.v-neg {
+  color: var(--red);
 }
 
 /* ---------- 特别关注 ---------- */
@@ -447,8 +471,40 @@ main {
   font-size: 13px;
 }
 .wc-lineup-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 11px;
   color: var(--text-dim);
+}
+.wc-formation {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+  background: rgba(76, 141, 255, 0.15);
+  border-radius: 6px;
+  padding: 1px 7px;
+  font-variant-numeric: tabular-nums;
+}
+.wc-lineup-chips {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.wc-chip {
+  font-size: 12px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 2px 9px;
+  white-space: nowrap;
+}
+.wc-lineup-note {
+  margin-top: 5px;
+  font-size: 11px;
+  color: var(--text-faint);
 }
 .wc-lineup-pending {
   margin-top: 6px;
@@ -462,13 +518,75 @@ main {
   flex-direction: column;
   gap: 4px;
 }
+.wc-news-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
 .wc-news-link {
   color: var(--accent);
   font-size: 13px;
   text-decoration: none;
+  flex: 1;
+  min-width: 0;
 }
 .wc-news-link:hover {
   text-decoration: underline;
+}
+.wc-news-ts {
+  font-size: 10px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 雷达命中块 */
+.wc-radar {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.wc-radar-h {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.wc-radar-hit {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 8px;
+  background: var(--bg-3);
+  border-left: 3px solid transparent;
+}
+.wc-radar-hit.flag-green {
+  border-left-color: var(--green);
+}
+.wc-radar-hit.flag-yellow {
+  border-left-color: var(--yellow);
+}
+.wc-hit-dot {
+  flex: 0 0 auto;
+}
+.wc-hit-txt {
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.wc-hit-ev {
+  flex: 0 0 auto;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.wc-hit-ev.wc-hit-pos {
+  color: var(--green);
+}
+.wc-hit-ev.wc-hit-neg {
+  color: var(--red);
 }
 
 /* ---------- 账本 ---------- */

@@ -49,3 +49,41 @@ def test_add_bet_and_ledger(tmp_path):
     db.add_bet(wallet="A", legs=[{"m": "x", "o": "平"}], stake=5, odds=4.55)
     led = db.ledger()
     assert led["A"]["n"] == 1 and led["A"]["stake"] == 5
+
+
+def test_enrich_save_latest_replace(tmp_path):
+    """save_enrich 存阵容+新闻; latest_enrich 解析; latest_enrich_all 含此队;
+    重存覆盖; lineup=None 存 NULL 并返回 None。"""
+    db = Db(tmp_path / "t.db")
+    db.init()
+    lineup = {"formation": "4-3-3", "players": ["A", "B"], "source": "s", "note": ""}
+    news = [{"title": "西班牙备战", "url": "http://x/1", "ts": "2026-06-15"}]
+    db.save_enrich("西班牙", lineup, news)
+
+    got = db.latest_enrich("西班牙")
+    assert got is not None
+    assert got["team_cn"] == "西班牙"
+    assert got["lineup"] == lineup
+    assert got["news"] == news
+    assert got["ts"]  # ts 非空
+
+    all_ = db.latest_enrich_all()
+    assert "西班牙" in all_
+    assert all_["西班牙"]["lineup"]["formation"] == "4-3-3"
+
+    # 缺席的队 → None
+    assert db.latest_enrich("不存在") is None
+
+    # 替换语义: 重存覆盖, 仍单行
+    db.save_enrich("西班牙", {"formation": "4-4-2", "players": ["C"],
+                              "source": "s2", "note": "更新"}, [])
+    got2 = db.latest_enrich("西班牙")
+    assert got2["lineup"]["formation"] == "4-4-2"
+    assert got2["news"] == []
+    assert len(db.latest_enrich_all()) == 1
+
+    # lineup=None → 存 NULL, 返回 None; news 仍可存
+    db.save_enrich("西班牙", None, news)
+    got3 = db.latest_enrich("西班牙")
+    assert got3["lineup"] is None
+    assert got3["news"] == news

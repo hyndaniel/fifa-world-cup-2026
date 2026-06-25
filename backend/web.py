@@ -162,6 +162,19 @@ def create_app(db_path="wc.db", cfg=None, reports_dir="reports",
         threading.Thread(target=work, daemon=True).start()
         return {"accepted": True, "matches": n}
 
+    # ---------------- /api/ingest/enrich ----------------
+    # Mac 采集脚本 POST 各队阵容/新闻 (Google News RSS 等) 到这里, 入 enrich 表
+    # (每队一行, 替换语义)。state.build_state 会把它挂到 watchlist 各项上。
+    @app.post("/api/ingest/enrich", dependencies=[Depends(auth_dep)])
+    async def api_ingest_enrich(request: Request):
+        body = await request.json()
+        items = (body or {}).get("items") or []
+        n = 0
+        for item in items:
+            db.save_enrich(item["team"], item.get("lineup"), item.get("news") or [])
+            n += 1
+        return {"accepted": True, "teams": n}
+
     # ---------------- static frontend ----------------
     if os.path.isdir(frontend_dir):
         app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")

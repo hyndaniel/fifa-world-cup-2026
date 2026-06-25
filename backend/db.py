@@ -8,6 +8,7 @@
 - watchlist(id, kind, key, note)                                     kind∈{team,match,player}
 - bets(id, ts, wallet, legs_json, stake, odds, status, payout, note) wallet∈{A,B}
 - app_config(key, value)
+- enrich(team_cn PK, ts, lineup_json, news_json)                     每队一行, 替换语义
 
 方法返回 dict (row_factory=sqlite3.Row)。
 """
@@ -64,6 +65,12 @@ CREATE TABLE IF NOT EXISTS bets (
 CREATE TABLE IF NOT EXISTS app_config (
     key TEXT PRIMARY KEY,
     value TEXT
+);
+CREATE TABLE IF NOT EXISTS enrich (
+    team_cn TEXT PRIMARY KEY,
+    ts TEXT,
+    lineup_json TEXT,
+    news_json TEXT
 );
 """
 
@@ -247,3 +254,41 @@ class Db:
                    ON CONFLICT(key) DO UPDATE SET value=excluded.value""",
                 (key, str(value)),
             )
+
+    # ---------- enrich (阵容/新闻) ----------
+    def save_enrich(self, team_cn, lineup, news):
+        """每队一行, 替换语义 (ON CONFLICT(team_cn) DO UPDATE)。
+
+        lineup: dict 或 None (未出炉时存 NULL); news: list (None→[])。
+        """
+        lineup_json = json.dumps(lineup, ensure_ascii=False) if lineup is not None else None
+        news_json = json.dumps(news or [], ensure_ascii=False)
+        with self._conn() as conn:
+            conn.execute(
+                """INSERT INTO enrich (team_cn, ts, lineup_json, news_json)
+                   VALUES (?,?,?,?)
+                   ON CONFLICT(team_cn) DO UPDATE SET
+                     ts=excluded.ts, lineup_json=excluded.lineup_json,
+                     news_json=excluded.news_json""",
+                (team_cn, _now_bj(), lineup_json, news_json),
+            )
+
+    def _row_to_enrich(self, row):
+        return {
+            "team_cn": row["team_cn"],
+            "ts": row["ts"],
+            "lineup": json.loads(row["lineup_json"]) if row["lineup_json"] else None,
+            "news": json.loads(row["news_json"]) if row["news_json"] else [],
+        }
+
+    def latest_enrich(self, team_cn):
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM enrich WHERE team_cn=?", (team_cn,)
+            ).fetchone()
+            return self._row_to_enrich(row) if row else None
+
+    def latest_enrich_all(self):
+        with self._conn() as conn:
+            rows = conn.execute("SELECT * FROM enrich").fetchall()
+            return {r["team_cn"]: self._row_to_enrich(r) for r in rows}

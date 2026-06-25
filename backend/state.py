@@ -4,7 +4,8 @@ build_state(db, cfg, now_bj) -> dict:
   - value_radar: 取每场最新一批 value_points 中 flag∈{green,yellow} (排除 skip),
                  按 ev_pct (去水) 降序; 每项带 match 名 + ko_bj + cutoff_bj。
   - next_cutoff: 未停售 (status!='Stopped') 的场里, cutoff 时刻 >= now 的最近一个 + 倒计时秒。
-  - watchlist:   各 pin 项 (队/场/人); v1 matches/lineup/news 字段占位 (Task9 填)。
+  - watchlist:   各 pin 项 (队/场/人) 富化: 关联场次 matches + 阵容 lineup + 新闻 news
+                 + 雷达命中 radar_hits (该项关联场次里 green/yellow 的 value_points 精简)。
   - ledger:      来自 db.ledger()。
   - matches_today: 今日 (now_bj 同日) 的场次精简列表。
 
@@ -14,7 +15,7 @@ build_state(db, cfg, now_bj) -> dict:
   "next_cutoff": {"match": "...", "cutoff_bj": "23:00", "countdown_sec": 8950},
   "value_radar": [ {match,ko_bj,market,outcome,zucai_odds,poly_prob_devig,
                     poly_prob_raw,ev_pct_devig,ev_pct_raw,flag,cutoff_bj}, ... ],
-  "watchlist": [ {kind,key,note,matches,lineup,news}, ... ],
+  "watchlist": [ {kind,key,note,matches,lineup,news,radar_hits}, ... ],
   "ledger": {"A":{...},"B":{...}},
   "matches_today": []
 }
@@ -83,6 +84,129 @@ def _radar_item(vp, match):
     }
 
 
+def _match_brief(m):
+    """关联场次精简 (watchlist matches 字段)。"""
+    return {
+        "match": f"{m.get('home_cn', '')} vs {m.get('away_cn', '')}",
+        "ko_bj": m.get("ko_bj") or "",
+        "cutoff_bj": m.get("cutoff_bj") or "",
+        "status": m.get("status") or "",
+    }
+
+
+def _split_match_key(key):
+    """把 match 类 key 拆成两队名: 优先 " vs ", 容忍 "vs"。返回 (a, b) 或 (key, "")。"""
+    s = str(key or "")
+    if " vs " in s:
+        a, b = s.split(" vs ", 1)
+    elif "vs" in s:
+        a, b = s.split("vs", 1)
+    else:
+        return s.strip(), ""
+    return a.strip(), b.strip()
+
+
+def _merge_news(*lists, cap=5):
+    """合并多份 news, 按 url 去重 (无 url 用 title 兜底), 截断到 cap。"""
+    out = []
+    seen = set()
+    for lst in lists:
+        for n in lst or []:
+            k = n.get("url") or n.get("title")
+            if k in seen:
+                continue
+            seen.add(k)
+            out.append(n)
+            if len(out) >= cap:
+                return out
+    return out
+
+
+def _radar_hit(vp, match):
+    """单条 watchlist radar_hit (精简映射)。"""
+    name = ""
+    if match:
+        name = f"{match.get('home_cn', '')} vs {match.get('away_cn', '')}"
+    return {
+        "match": name,
+        "market": vp.get("market"),
+        "outcome": vp.get("outcome"),
+        "zucai_odds": vp.get("zucai_odds"),
+        "poly_prob_devig": vp.get("poly_prob_devig"),
+        "ev_pct_devig": vp.get("ev_pct"),
+        "flag": vp.get("flag"),
+    }
+
+
+def _build_watch_item(w, db, by_id, latest_vps):
+    """把一条 watchlist 行富化为契约形状 (matches/lineup/news/radar_hits)。
+
+    链接规则 (契约 §4):
+      - team:   key 命中 home_cn 或 away_cn 即关联; lineup/news = latest_enrich(key)。
+      - match:  拆 key 两队, 两队名都出现在 (home_cn, away_cn) 才关联;
+                lineup = 主队 latest_enrich.lineup; news = 两队 news 合并去重 cap5。
+      - player: 不关联场次; lineup=None; news = latest_enrich(key).news (无则 [])。
+    radar_hits: latest_value_points 里 flag∈{green,yellow} 且 match_id ∈ 关联场次;
+                按 ev_pct 降序, cap 6。
+    """
+    kind = w.get("kind")
+    key = w.get("key")
+    item = {
+        "kind": kind,
+        "key": key,
+        "note": w.get("note") or "",
+        "matches": [],
+        "lineup": None,
+        "news": [],
+        "radar_hits": [],
+    }
+
+    linked_ids = set()
+
+    if kind == "team":
+        for m in by_id.values():
+            if key and (key in (m.get("home_cn") or "") or key in (m.get("away_cn") or "")):
+                item["matches"].append(_match_brief(m))
+                linked_ids.add(m["id"])
+        en = db.latest_enrich(key)
+        if en:
+            item["lineup"] = en.get("lineup")
+            item["news"] = en.get("news") or []
+
+    elif kind == "match":
+        a, b = _split_match_key(key)
+        for m in by_id.values():
+            names = (m.get("home_cn") or "", m.get("away_cn") or "")
+            blob = "".join(names)
+            if a and b and a in blob and b in blob:
+                item["matches"].append(_match_brief(m))
+                linked_ids.add(m["id"])
+        en_a = db.latest_enrich(a) if a else None
+        en_b = db.latest_enrich(b) if b else None
+        if en_a and en_a.get("lineup"):
+            item["lineup"] = en_a.get("lineup")
+        item["news"] = _merge_news(
+            (en_a or {}).get("news") or [],
+            (en_b or {}).get("news") or [],
+            cap=5,
+        )
+
+    elif kind == "player":
+        en = db.latest_enrich(key)
+        item["news"] = (en.get("news") or []) if en else []
+
+    if linked_ids:
+        hits = [
+            _radar_hit(vp, by_id.get(vp.get("match_id")))
+            for vp in latest_vps
+            if vp.get("flag") in ("green", "yellow") and vp.get("match_id") in linked_ids
+        ]
+        hits.sort(key=lambda x: (x["ev_pct_devig"] is None, -(x["ev_pct_devig"] or 0.0)))
+        item["radar_hits"] = hits[:6]
+
+    return item
+
+
 def build_state(db, cfg, now_bj=None) -> dict:
     """组装 /state JSON。
 
@@ -124,17 +248,11 @@ def build_state(db, cfg, now_bj=None) -> dict:
                 "countdown_sec": int((dt - now_bj).total_seconds()),
             }
 
-    # ---- watchlist: pin 项 + v1 占位字段 ----
-    watch = []
-    for w in db.watchlist():
-        watch.append({
-            "kind": w.get("kind"),
-            "key": w.get("key"),
-            "note": w.get("note") or "",
-            "matches": [],
-            "lineup": None,
-            "news": [],
-        })
+    # ---- watchlist: pin 项 富化 (matches/lineup/news/radar_hits) ----
+    watch = [
+        _build_watch_item(w, db, by_id, vps)
+        for w in db.watchlist()
+    ]
 
     # ---- ledger ----
     b_budget = cfg.get("wallet", {}).get("B_weekly_budget", 100) if cfg else 100
