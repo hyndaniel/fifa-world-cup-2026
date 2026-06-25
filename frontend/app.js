@@ -181,42 +181,81 @@ function renderRadar(rows) {
     list.appendChild(el("div", "empty", "暂无可投价值点"));
     return;
   }
+  // 按比赛(match + ko_bj)分组: 一场一张卡, 多条腿挂在下面。保留传入顺序
+  // (后端已按 EV 去水降序), 组的先后取该场首条腿出现的次序。
+  const groups = [];
+  const byKey = new Map();
   for (const r of rows) {
-    const b = flagBadge(r.flag);
-    const item = el("div", `radar-item ${b.cls}`);
+    const key = `${r.match || "—"}|${r.ko_bj || ""}`;
+    let g = byKey.get(key);
+    if (!g) {
+      g = { match: r.match || "—", ko_bj: r.ko_bj || "", legs: [] };
+      byKey.set(key, g);
+      groups.push(g);
+    }
+    g.legs.push(r);
+  }
+  for (const g of groups) {
+    list.appendChild(renderRadarGroup(g));
+  }
+}
 
-    const row = el("div", "radar-row");
-    const left = el("div", "ri-left");
-    left.appendChild(el("div", "ri-match", r.match || "—"));
-    const sub = el("div", "ri-sub");
-    sub.textContent = `${r.ko_bj || ""} · ${r.market || ""} ${r.outcome || ""}`;
-    left.appendChild(sub);
+// 一场比赛 = 一张分组卡: 组头(队名 + 开赛时间 + 条数), 下挂各盘口腿。
+function renderRadarGroup(g) {
+  // 组头着色取组内最高级别: 有 green 用 green, 否则 yellow。
+  const hasGreen = g.legs.some((l) => l.flag === "green");
+  const wrap = el("div", `radar-group ${hasGreen ? "flag-green" : "flag-yellow"}`);
 
-    // 始终可见的紧凑对比行: 足彩(隐含) · Poly去水 · 差 · EV
-    const cmp = buildCompareLine(r);
-    if (cmp) left.appendChild(cmp);
+  const head = el("div", "rg-head");
+  const title = el("div", "rg-title");
+  title.appendChild(el("span", "rg-match", g.match));
+  if (g.ko_bj) title.appendChild(el("span", "rg-ko", g.ko_bj));
+  head.appendChild(title);
+  head.appendChild(el("span", "rg-count", `${g.legs.length} 条`));
+  wrap.appendChild(head);
 
-    row.appendChild(left);
+  const legsWrap = el("div", "rg-legs");
+  for (const r of g.legs) legsWrap.appendChild(renderRadarLeg(r));
+  wrap.appendChild(legsWrap);
+  return wrap;
+}
 
-    row.appendChild(el("div", "ri-odds", fmtNum(r.zucai_odds)));
-    row.appendChild(el("div", "ri-val ri-raw", fmtNum(r.value_raw != null ? r.value_raw : r.poly_prob_raw && r.zucai_odds ? (r.zucai_odds * r.poly_prob_raw) / 100 : null, 3)));
-    row.appendChild(el("div", "ri-val ri-devig", fmtNum(r.value_devig != null ? r.value_devig : r.poly_prob_devig && r.zucai_odds ? (r.zucai_odds * r.poly_prob_devig) / 100 : null, 3)));
+// 单条盘口腿 (组内一行)。比赛名/开赛时间已在组头, 故主行改显市场/选择,
+// 点开仍展开同样的去水明细。
+function renderRadarLeg(r) {
+  const b = flagBadge(r.flag);
+  const item = el("div", `radar-item ${b.cls}`);
 
-    const badge = el("div", `ri-badge ${b.cls}`);
-    badge.textContent = `${b.dot} ${b.label}`;
-    row.appendChild(badge);
+  const row = el("div", "radar-row");
+  const left = el("div", "ri-left");
+  const legLabel = `${r.market || ""} ${r.outcome || ""}`.trim() || "—";
+  left.appendChild(el("div", "ri-match", legLabel));
 
-    item.appendChild(row);
+  // 始终可见的紧凑对比行: 足彩(隐含) · Poly去水 · 差 · EV
+  const cmp = buildCompareLine(r);
+  if (cmp) left.appendChild(cmp);
 
-    // 点开详情
-    const detail = el("div", "radar-detail");
-    detail.hidden = true;
-    const implied = impliedPct(r.zucai_odds);
-    const edge = probEdge(r); // poly_prob_devig - implied (去水概率差)
-    const edgeCls = edge == null ? "" : edge >= 0 ? "v-pos" : "v-neg";
-    const evDevig = r.ev_pct_devig != null ? r.ev_pct_devig : r.ev_pct;
-    const evCls = evDevig == null || Number.isNaN(Number(evDevig)) ? "" : Number(evDevig) >= 0 ? "v-pos" : "v-neg";
-    detail.innerHTML = `
+  row.appendChild(left);
+
+  row.appendChild(el("div", "ri-odds", fmtNum(r.zucai_odds)));
+  row.appendChild(el("div", "ri-val ri-raw", fmtNum(r.value_raw != null ? r.value_raw : r.poly_prob_raw && r.zucai_odds ? (r.zucai_odds * r.poly_prob_raw) / 100 : null, 3)));
+  row.appendChild(el("div", "ri-val ri-devig", fmtNum(r.value_devig != null ? r.value_devig : r.poly_prob_devig && r.zucai_odds ? (r.zucai_odds * r.poly_prob_devig) / 100 : null, 3)));
+
+  const badge = el("div", `ri-badge ${b.cls}`);
+  badge.textContent = `${b.dot} ${b.label}`;
+  row.appendChild(badge);
+
+  item.appendChild(row);
+
+  // 点开详情
+  const detail = el("div", "radar-detail");
+  detail.hidden = true;
+  const implied = impliedPct(r.zucai_odds);
+  const edge = probEdge(r); // poly_prob_devig - implied (去水概率差)
+  const edgeCls = edge == null ? "" : edge >= 0 ? "v-pos" : "v-neg";
+  const evDevig = r.ev_pct_devig != null ? r.ev_pct_devig : r.ev_pct;
+  const evCls = evDevig == null || Number.isNaN(Number(evDevig)) ? "" : Number(evDevig) >= 0 ? "v-pos" : "v-neg";
+  detail.innerHTML = `
       <div class="rd-grid">
         <div><span class="k">隐含概率</span><span class="v">${esc(implied == null ? "—" : fmtPct(implied))}</span></div>
         <div><span class="k">概率差(去水)</span><span class="v ${edgeCls}">${esc(edge == null ? "—" : fmtSignedPct(edge))}</span></div>
@@ -228,15 +267,14 @@ function renderRadar(rows) {
         <div><span class="k">建议</span><span class="v">${r.flag === "yellow" ? "薄边, 噪声内, 谨慎" : "单关小注"}</span></div>
       </div>
     `;
-    item.appendChild(detail);
+  item.appendChild(detail);
 
-    row.addEventListener("click", () => {
-      detail.hidden = !detail.hidden;
-      item.classList.toggle("open", !detail.hidden);
-    });
+  row.addEventListener("click", () => {
+    detail.hidden = !detail.hidden;
+    item.classList.toggle("open", !detail.hidden);
+  });
 
-    list.appendChild(item);
-  }
+  return item;
 }
 
 // ================= 决策卡 (新 hero) =================
