@@ -4,6 +4,8 @@
 "今天哪几场、比分大概多少、胜平负概率多少、盘口有没有价值、哪条腿最不亏"
 做成手机可扫读的**决策卡**，部署在 AWS-HK 实时访问。
 
+> 📐 **架构总览** → [`docs/架构.md`](docs/架构.md)：四角色（情报粮草 + v1/v2/价值三脑）· 逻辑数据流 + 运行拓扑图 · 核心红线（v1⊥v2）· 置信度模型。
+
 ## 诚实定位
 
 - **不是**稳定盈利/回血机器——足彩长期 -EV，没有工具能改变这一点。
@@ -114,6 +116,7 @@ curl -u user:<password> localhost:8000/api/state
 
 ## 文档
 
+- **架构总览**：[`docs/架构.md`](docs/架构.md) —— 系统级：四角色 + 数据流 + 运行拓扑 + 核心不变量 + 置信度模型
 - 看板设计：[`docs/superpowers/specs/2026-06-15-wc-value-dashboard-design.md`](docs/superpowers/specs/2026-06-15-wc-value-dashboard-design.md)
 - 一键 + 看板重构契约：[`docs/superpowers/specs/2026-06-25-one-action-and-dashboard-redesign-CONTRACT.md`](docs/superpowers/specs/2026-06-25-one-action-and-dashboard-redesign-CONTRACT.md)
 - v2 概率脑设计：[`docs/superpowers/specs/2026-06-25-wc-prediction-v2-design.md`](docs/superpowers/specs/2026-06-25-wc-prediction-v2-design.md)
