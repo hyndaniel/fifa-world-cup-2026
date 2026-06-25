@@ -65,12 +65,19 @@ def _norm_team(s):
     return re.sub(r"[()（）·\s]", "", s or "")
 
 
+def _team_exact(a, b):
+    a, b = _norm_team(a), _norm_team(b)
+    return bool(a) and a == b
+
+
 def _team_eq(a, b):
-    """队名宽松相等: 归一后相等, 或一个是另一个子串(沙特 ⊂ 沙特阿拉伯)。"""
+    """队名宽松相等: 归一相等, 或一个是另一个的【前缀】(沙特⊂沙特阿拉伯, 合法缩写)。
+    只认前缀、不认任意子串 —— 否则 几内亚/赤道几内亚、苏丹/南苏丹、爱尔兰/北爱尔兰
+    这类"前缀扩展出的不同球队"会被误配(它们的短名是长名的后缀而非前缀)。"""
     a, b = _norm_team(a), _norm_team(b)
     if not a or not b:
         return False
-    return a == b or a in b or b in a
+    return a == b or a.startswith(b) or b.startswith(a)
 
 
 def _split_label(label):
@@ -79,12 +86,14 @@ def _split_label(label):
 
 
 def _find_by_teams(items, home, away):
-    """在 items 里找两队都宽松相等的一项(主客同序); 无 → None。"""
-    for it in items:
-        ih, ia = _split_label(it.get("label"))
-        if _team_eq(ih, home) and _team_eq(ia, away):
-            return it
-    return None
+    """先精确(归一相等)匹配; 无则退回宽松前缀匹配, 但仅当唯一命中才采纳
+    (多于一个宽松命中 → None, 不猜, 宁可标 stale)。"""
+    pairs = [(it, _split_label(it.get("label"))) for it in items]
+    exact = [it for it, (ih, ia) in pairs if _team_exact(ih, home) and _team_exact(ia, away)]
+    if exact:
+        return exact[0]
+    loose = [it for it, (ih, ia) in pairs if _team_eq(ih, home) and _team_eq(ia, away)]
+    return loose[0] if len(loose) == 1 else None
 
 
 def build_panel(zucai_items, consensus_items, poly_items, prev_lookup):
@@ -111,8 +120,8 @@ def build_panel(zucai_items, consensus_items, poly_items, prev_lookup):
                                 "stale": c_devig is None}
         else:
             src["consensus"] = {"stale": True}
-        # poly(按队名宽松对齐; 缓存里其实同 zucai_num)
-        p = _find_by_teams(poly_items, zh, za)
+        # poly: build-list 已按 zucai_num 出 item, 直接 key 命中(精确, 免队名歧义)
+        p = next((it for it in poly_items if it.get("match_key") == mk), None)
         if p:
             pp = p.get("payload") or {}
             p_devig = pp.get("poly_devig")
@@ -121,12 +130,14 @@ def build_panel(zucai_items, consensus_items, poly_items, prev_lookup):
                            "stale": p_devig is None}
         else:
             src["poly"] = {"stale": True}
-        # divergence: 竞彩去水 − 欧盘去水 (pp)
+        # divergence: 竞彩去水 − 欧盘去水 (pp); 任一分量缺 → 该分量 None(防 TypeError)
         cdv = src["consensus"].get("devig") if not src["consensus"].get("stale") else None
-        if z_devig and cdv:
-            div = {k: round(z_devig[k] - cdv[k], 1) for k in ("h", "d", "a")}
-        else:
-            div = {"h": None, "d": None, "a": None}
+
+        def _dvg(k):
+            if z_devig and cdv and z_devig.get(k) is not None and cdv.get(k) is not None:
+                return round(z_devig[k] - cdv[k], 1)
+            return None
+        div = {k: _dvg(k) for k in ("h", "d", "a")}
         panel.append({"match_key": mk, "label": label, "ko": z.get("ko"),
                       "fetched_at": ow.now_bj(), "sources": src, "divergence": div})
     return panel
@@ -171,7 +182,10 @@ def run_once(dry_run=False):
         raw_env = sporttery.fetch({})           # 竞彩 raw 信封(推 /api/ingest/zucai)
     except Exception as e:  # noqa: BLE001
         sys.stderr.write(f"  [warn] sporttery raw 失败: {e!r}\n"); raw_env = None
-    zucai_items = ow.fetch_zucai()
+    try:
+        zucai_items = ow.fetch_zucai()
+    except Exception as e:  # noqa: BLE001 — 竞彩是面板主干, 空则本轮无面板属正常降级
+        sys.stderr.write(f"  [warn] 竞彩 fetch 失败: {e!r}\n"); zucai_items = []
     try:
         consensus_items = ow.fetch_consensus()
     except Exception as e:  # noqa: BLE001
@@ -207,7 +221,10 @@ if __name__ == "__main__":
     if a.loop:
         print(f"refresh_all 循环启动: 每 {a.loop}s, Ctrl-C 停")
         while True:
-            run_once(a.dry_run)
+            try:
+                run_once(a.dry_run)
+            except Exception as e:  # noqa: BLE001 — best-effort: 单轮异常不杀循环, 下轮重试
+                sys.stderr.write(f"  [warn] run_once 异常, 跳过本轮: {e!r}\n")
             time.sleep(a.loop)
     else:
         run_once(a.dry_run)

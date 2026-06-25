@@ -89,3 +89,41 @@ def test_team_eq_no_false_positive():
     # 刚果金 vs 刚果布 不应误配
     assert ra._team_eq("刚果金", "刚果(金)")
     assert not ra._team_eq("刚果金", "刚果布")
+
+
+def test_team_eq_rejects_prefix_extended_different_teams():
+    # 前缀扩展出的不同球队不应误配(短名是长名的后缀, 非前缀)
+    assert not ra._team_eq("几内亚", "赤道几内亚")
+    assert not ra._team_eq("苏丹", "南苏丹")
+    assert not ra._team_eq("爱尔兰", "北爱尔兰")
+    # 合法前缀缩写仍对齐
+    assert ra._team_eq("沙特", "沙特阿拉伯")
+
+
+def test_find_by_teams_exact_preferred_over_loose():
+    items = [
+        {"match_key": "L", "label": "沙特阿拉伯 vs 美国"},   # 宽松(前缀)候选
+        {"match_key": "E", "label": "沙特 vs 美国"},         # 精确候选
+    ]
+    assert ra._find_by_teams(items, "沙特", "美国")["match_key"] == "E"
+
+
+def test_find_by_teams_ambiguous_loose_returns_none():
+    # 两个宽松候选 → 不猜, 返 None
+    items = [
+        {"match_key": "A", "label": "沙特阿拉伯 vs 美国"},
+        {"match_key": "B", "label": "沙特 vs 美国"},
+    ]
+    # 用一个既非精确、又同时前缀命中两者的查询("沙" 前缀 both)
+    assert ra._find_by_teams(items, "沙", "美国") is None
+
+
+def test_build_panel_poly_aligned_by_match_key():
+    zucai = [{"match_key": "周四055", "label": "土耳其 vs 美国", "ko": "k",
+              "payload": {"had": {"h": 2.7, "d": 3.4, "a": 1.95}, "hhad": None, "ttg": {}}}]
+    # poly label 故意写错, 但 match_key 对 → 仍应命中(按 key 不按 label)
+    poly = [{"match_key": "周四055", "label": "錯的标签", "ko": "k",
+             "payload": {"poly_devig": {"h": 30.0, "d": 28.0, "a": 42.0}}}]
+    p = ra.build_panel(zucai, [], poly, prev_lookup=lambda s, k: None)[0]
+    assert p["sources"]["poly"]["stale"] is False
+    assert p["sources"]["poly"]["devig"]["h"] == 30.0
