@@ -29,6 +29,7 @@ cd /opt/github/fifa-world-cup-2026
 sudo git fetch origin --tags
 sudo git reset --hard fifa-deploy/<当天日期>-<N>     # host 文件 = docker build 上下文
 sudo git describe --tags                              # 确认 == 该 tag
+sudo python3 tools/gen_report_times.py || true        # 按 git 提交时间刷新报告时间清单(治 git reset 抹平 mtime → 报告列表全同一时刻/乱序); reports/ 是 bind-mount 改完即生效; || true 防缺 python3/出错阻断后续部署(报告序非致命, 可补跑)
 sudo docker compose build                             # 把新代码烤进镜像
 sudo docker compose up -d                             # recreate 容器(network_mode:host → 几秒 downtime)
 ```
@@ -46,3 +47,4 @@ curl -s -o /dev/null -w 'HTTP %{http_code}\n' http://localhost:8000/   # 期望 
 - 改代码**必须 rebuild + recreate**——代码烤进镜像,只 `git reset` 主机不 rebuild = 容器还是旧代码,白改。
 - `data`/`config.toml`/`reports` 是 bind-mount,rebuild 不丢;别删/覆盖它们。
 - 同机还有别的容器(teslamate / csy-distill / lets-drink 等),`docker compose` 只动本 repo 的 `app`;别误杀其它容器。
+- 报告时间清单 `reports/report_times.json` 须在 `git reset` 后跑 `gen_report_times.py` 刷新(slim 容器无 git、靠这份清单给报告列表排序);漏跑则报告新旧序可能乱(非致命,可补跑)。

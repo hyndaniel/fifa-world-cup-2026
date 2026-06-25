@@ -60,10 +60,11 @@ def _first_h1(text):
 
 
 def list_reports(reports_dir="reports"):
-    """reports/*.md → [{"name","title","mtime"}], 按修改时间倒序 (最新在前)。
+    """reports/*.md → [{"name","title","mtime"}], 按时间倒序 (最新在前)。
 
-    mtime: 文件最后修改时间 (unix 秒)。前端据此分组(今天/更早)+ 显示时间,
-    并按时间排序, 解决"报告列表按文件名乱序、看不出新旧"的问题。
+    mtime: 报告时间戳 (unix 秒), 由 _resolve_ts 解析: 优先构建期清单 report_times.json
+    (免疫部署 mtime 抹平), 其次 git 提交时间, 最后文件 mtime。前端据此分组(今天/更早)
+    + 显示时间 + 排序, 解决"报告列表看不出新旧 / 部署后全同一时刻"的问题。
     """
     base = pathlib.Path(reports_dir)
     if not base.is_dir():
