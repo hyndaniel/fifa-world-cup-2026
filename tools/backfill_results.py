@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """赛果回填闭环编排:抓终比分 → record_result(幂等)→ 机械对错标台账 → 重跑跑分卡。
 
---once 供 launchd 每 5 分钟无害重跑:已录的场次 upsert 不重复,无新赛果直接退出 0。
+--once 是唯一运行模式(单跑单退),供 launchd 每 5 分钟无害重跑:已录的场次 upsert
+不重复;跑分卡每次无条件重跑(确定性、内容不变即无 diff),故上次崩了下次自愈。
 """
 from __future__ import annotations
 
@@ -83,7 +84,10 @@ def _rerun_scorecard(cache_path: str) -> None:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="赛果回填闭环编排")
-    ap.add_argument("--once", action="store_true", help="单次执行(launchd)")
+    # --once 是唯一运行模式(单跑单退,供 launchd 每 5 分钟调度);接受该 flag
+    # 以兼容 plist 调用,但不引入循环模式——本脚本本就只跑一次就退。
+    ap.add_argument("--once", action="store_true",
+                    help="唯一运行模式:单跑单退(供 launchd);无此 flag 行为相同")
     ap.add_argument("--cache", default=DEFAULT_CACHE)
     ap.add_argument("--tags-out", default=DEFAULT_TAGS_OUT)
     args = ap.parse_args(argv)
@@ -95,13 +99,22 @@ def main(argv=None) -> int:
         return 1
 
     keys = backfill(args.cache, results)
-    if not keys:
+    # 台账写入只在有新 keys 时做(append、非幂等,不能每次刷)。
+    if keys:
+        write_mech_tags(args.cache, keys, args.tags_out)
+        print(f"[backfill] 已录 {len(keys)} 场: {keys}")
+    else:
         print("[backfill] 无新赛果可录")
-        return 0
 
-    write_mech_tags(args.cache, keys, args.tags_out)
-    print(f"[backfill] 已录 {len(keys)} 场: {keys}")
-    _rerun_scorecard(args.cache)
+    # 跑分卡重跑无条件执行(自愈):它是确定性的(同一 db → 同样的预测v2.md,
+    # 内容不变即无害)。即便上次重跑崩了进程退,本次也会重新生成——这正是
+    # launchd 每 5 分钟自愈的意义,故不被"本次有无新赛果"门控。
+    # 用 try 包裹:失败 signal 非 0,但不吞掉前面已成功的 record/台账。
+    try:
+        _rerun_scorecard(args.cache)
+    except Exception as e:  # noqa: BLE001 重跑任何失败都 signal 1,record/台账已落地
+        print(f"[backfill] 重跑跑分卡失败: {e}", file=sys.stderr)
+        return 1
     return 0
 
 

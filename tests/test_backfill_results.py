@@ -38,23 +38,65 @@ def test_backfill_idempotent(tmp_path):
 
 
 def test_main_no_results_returns_0(tmp_path, monkeypatch, capsys):
-    # mock fetch_results 返回全未完赛 → 无可录 → 打印 + 返回 0,不重跑跑分卡
+    # mock fetch_results 返回全未完赛 → 无可录 → 打印 + 返回 0
     db = str(tmp_path / "t.db")
     monkeypatch.setattr(B, "fetch_results",
                         lambda *a, **k: [MatchResult("周五099", 0, 0, False)])
+    monkeypatch.setattr(B, "_rerun_scorecard", lambda *a, **k: None)  # 不打真 v2
     rc = B.main(["--once", "--cache", db, "--tags-out", str(tmp_path / "ledger.md")])
     assert rc == 0
     assert "无新赛果可录" in capsys.readouterr().out
+
+
+def test_main_reruns_scorecard_even_without_new_results(tmp_path, monkeypatch):
+    # 自愈核心:即便本次无新赛果(backfill 返 []),跑分卡重跑仍被无条件调用。
+    # 这锚住"上次重跑崩了、本次没新赛果也补跑"的每 5 分钟自愈属性。
+    db = str(tmp_path / "t.db")
+    monkeypatch.setattr(B, "fetch_results",
+                        lambda *a, **k: [MatchResult("周五099", 0, 0, False)])
+    calls = []
+    monkeypatch.setattr(B, "_rerun_scorecard", lambda cache: calls.append(cache))
+    rc = B.main(["--once", "--cache", db, "--tags-out", str(tmp_path / "ledger.md")])
+    assert rc == 0
+    assert calls == [db]                              # 无新赛果仍重跑一次
 
 
 def test_main_fetch_failure_returns_1(tmp_path, monkeypatch, capsys):
     def _boom(*a, **k):
         raise RuntimeError("网络炸了")
     monkeypatch.setattr(B, "fetch_results", _boom)
+    calls = []
+    monkeypatch.setattr(B, "_rerun_scorecard", lambda cache: calls.append(cache))
     rc = B.main(["--once", "--cache", str(tmp_path / "t.db"),
                  "--tags-out", str(tmp_path / "ledger.md")])
     assert rc == 1
     assert "失败" in capsys.readouterr().err
+    assert calls == []                                # fetch 炸了不重跑跑分卡
+
+
+def test_main_rerun_failure_returns_1_but_keeps_record(tmp_path, monkeypatch, capsys):
+    # 重跑跑分卡抛异常 → signal 失败(rc=1)且打 stderr,但前面已成功的
+    # record/台账不被吞:db 仍有该场、台账仍有该行。
+    db = str(tmp_path / "t.db")
+    _empty_odds(db)
+    out = tmp_path / "ledger.md"
+    monkeypatch.setattr(B, "fetch_results",
+                        lambda *a, **k: [MatchResult("周四055", 2, 0, True)])
+
+    def _boom(cache):
+        raise RuntimeError("跑分卡炸了")
+    monkeypatch.setattr(B, "_rerun_scorecard", _boom)
+    rc = B.main(["--once", "--cache", db, "--tags-out", str(out)])
+    assert rc == 1
+    assert "失败" in capsys.readouterr().err
+    # record 已落库
+    conn = sqlite3.connect(db)
+    n = conn.execute(
+        "SELECT COUNT(*) FROM match_results WHERE match_key=?", ("周四055",)).fetchone()[0]
+    conn.close()
+    assert n == 1
+    # 台账已写该行
+    assert "| 周四055 |" in out.read_text(encoding="utf-8")
 
 
 def _empty_odds(db):
