@@ -31,7 +31,7 @@ def test_build_panel_aligns_by_label_and_divergence():
     panel = ra.build_panel(zucai, consensus, poly, prev_lookup=lambda s, k: None)
     assert len(panel) == 1
     p = panel[0]
-    assert p["match_key"] == "周四055"            # 对齐到 zucai_num
+    assert p["match_key"] == "土耳其 vs 美国"      # = 队名 label, 对齐决策卡 match_key
     assert not p["sources"]["zucai"]["stale"]
     assert not p["sources"]["consensus"]["stale"]
     assert not p["sources"]["poly"]["stale"]
