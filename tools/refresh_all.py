@@ -138,7 +138,10 @@ def build_panel(zucai_items, consensus_items, poly_items, prev_lookup):
                 return round(z_devig[k] - cdv[k], 1)
             return None
         div = {k: _dvg(k) for k in ("h", "d", "a")}
-        panel.append({"match_key": mk, "label": label, "ko": z.get("ko"),
+        # 面板 match_key 必须 = 决策卡 match_key(队名 label, 如 "挪威 vs 法国"),
+        # 否则 decisions_view 的 odds_map.get(d["match_key"]) 落空 → 面板"赔率待刷新"。
+        # (mk=zucai_num 仅供本函数内三源对齐/delta 查询, 不是决策卡的 key)
+        panel.append({"match_key": label, "label": label, "ko": z.get("ko"),
                       "fetched_at": ow.now_bj(), "sources": src, "divergence": div})
     return panel
 
