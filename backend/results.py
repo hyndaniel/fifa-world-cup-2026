@@ -81,7 +81,7 @@ def fetch_results(cfg: dict | None = None, timeout: float = 30.0) -> list[MatchR
 
     模式严格参照 backend.sporttery.fetch: httpx.Client、proxy 可选、raise_for_status。
     """
-    rcfg = (cfg or {}).get("results", {}) if cfg else {}
+    rcfg = (cfg or {}).get("results") or {}
     api = rcfg.get("api") or DEFAULT_API
     ua = rcfg.get("ua") or DEFAULT_UA
     proxy = rcfg.get("proxy") or None
@@ -101,7 +101,7 @@ def fetch_results(cfg: dict | None = None, timeout: float = 30.0) -> list[MatchR
         "matchBeginDate": begin,
         "matchEndDate": end,
         "leagueId": "",
-        "pageSize": "30",
+        "pageSize": "100",
         "pageNo": "1",
         "isFix": "0",
         "matchPage": "1",
