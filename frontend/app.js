@@ -580,7 +580,7 @@ function buildScheduleRow(d) {
     const b = flagBadge(best.flag);
     const chip = el("div", `sr-chip ${b.cls}`);
     chip.appendChild(signalDot(best.flag));
-    chip.appendChild(el("span", null, best.desc || `${best.market || ""} ${best.outcome || ""}`.trim() || "最不亏"));
+    chip.appendChild(el("span", "sr-chip-desc", best.desc || `${best.market || ""} ${best.outcome || ""}`.trim() || "最不亏"));
     const ev = best.ev_pct;
     if (ev != null && !Number.isNaN(Number(ev))) {
       chip.appendChild(el("span", Number(ev) >= 0 ? "ev-pos" : "ev-neg", fmtSignedPct(ev)));
