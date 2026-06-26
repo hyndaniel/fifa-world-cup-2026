@@ -16,3 +16,8 @@ node_modules/
 
 # OS
 .DS_Store
+
+# 运行时态 / agent 态 (不入库)
+.cache/
+.claude/agent-memory/
+docs/superpowers/handoffs/
