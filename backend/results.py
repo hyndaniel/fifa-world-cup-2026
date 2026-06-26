@@ -11,9 +11,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, timedelta
+
+import httpx
 
 # 完赛标志: matchResultStatus 取此值才算已完赛已开奖。
 FINISHED_STATUS = "2"
+
+# 开奖(FT 终比分)端点。Task 1 实测命中 (docs/design/notes-sporttery-result-endpoint.md):
+# 必须用 getUniformMatchResultV1.qry —— getMatchResultV1.qry 被 EdgeOne WAF 硬拦 403。
+DEFAULT_API = (
+    "https://webapi.sporttery.cn/gateway/uniform/football/getUniformMatchResultV1.qry"
+)
+DEFAULT_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) Mobile/15E148"
+REFERER = "https://m.sporttery.cn/"
+# 默认日期窗: 今天往前 2 天 ~ 今天 (相对日期, 别硬编码某一天)。
+DEFAULT_LOOKBACK_DAYS = 2
 
 
 @dataclass(frozen=True)
@@ -56,3 +69,48 @@ def parse_results(data: dict) -> list[MatchResult]:
         home, away = score if score is not None else (0, 0)
         out.append(MatchResult(num, home, away, finished))
     return out
+
+
+def fetch_results(cfg: dict | None = None, timeout: float = 30.0) -> list[MatchResult]:
+    """GET sporttery 开奖接口 → parse_results → list[MatchResult]。
+
+    从 cfg["results"] 取 api/ua/proxy/日期范围, 缺则用模块默认 (端点/UA/Referer
+    与 Task 1 实测对齐, 见 docs/design/notes-sporttery-result-endpoint.md)。
+    日期窗默认 = 今天往前 DEFAULT_LOOKBACK_DAYS 天 ~ 今天 (相对日期), 可经
+    cfg["results"]["begin_date"]/["end_date"] (YYYY-MM-DD) 覆盖。
+
+    模式严格参照 backend.sporttery.fetch: httpx.Client、proxy 可选、raise_for_status。
+    """
+    rcfg = (cfg or {}).get("results", {}) if cfg else {}
+    api = rcfg.get("api") or DEFAULT_API
+    ua = rcfg.get("ua") or DEFAULT_UA
+    proxy = rcfg.get("proxy") or None
+
+    today = date.today()
+    begin = rcfg.get("begin_date") or (
+        today - timedelta(days=DEFAULT_LOOKBACK_DAYS)
+    ).isoformat()
+    end = rcfg.get("end_date") or today.isoformat()
+
+    headers = {
+        "User-Agent": ua,
+        "Referer": REFERER,
+        "Accept": "application/json, text/plain, */*",
+    }
+    params = {
+        "matchBeginDate": begin,
+        "matchEndDate": end,
+        "leagueId": "",
+        "pageSize": "30",
+        "pageNo": "1",
+        "isFix": "0",
+        "matchPage": "1",
+        "pcOrWap": "1",
+    }
+    client_kwargs: dict = {"timeout": timeout}
+    if proxy:
+        client_kwargs["proxy"] = proxy
+    with httpx.Client(**client_kwargs) as client:
+        resp = client.get(api, params=params, headers=headers)
+        resp.raise_for_status()
+        return parse_results(resp.json())
