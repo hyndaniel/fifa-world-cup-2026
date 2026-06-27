@@ -85,7 +85,37 @@ def _bucket_lines(per_match, matchdays=None):
     return out + [""]
 
 
-def render(collected, audits, score=None, matchdays=None):
+def _score_arm_lines(score_rows, matchdays=None):
+    """v1 比分臂分桶子表:全局 + 常规/动机畸形 + 末轮/非末轮,各算 score_arm。
+
+    score_rows=collect_score_arm 的行(带 pred/actual/bucket)。无任何 v1 比分场 → 不出段。
+    单桶 n<5 标 ⚠(末轮畸形场稀少,小样本仅定性)。
+    """
+    rows = score_rows or []
+    if not any(r.get("pred") is not None for r in rows):
+        return []
+    md = matchdays or {}
+    specs = [("全局", lambda r: True),
+             ("常规", lambda r: r.get("bucket", "常规") == "常规"),
+             ("动机畸形", lambda r: r.get("bucket", "常规") == "动机畸形")]
+    if matchdays:
+        specs += [("非末轮", lambda r: md.get(r["match_key"]) in (1, 2)),
+                  ("末轮", lambda r: md.get(r["match_key"]) == 3)]
+    out = ["## v1 比分臂(精确比分,had 概率臂之外)", "",
+           "| 分桶 | n | 精确命中率 | 平均比分距离 |", "|---|---|---|---|"]
+    for label, pred in specs:
+        a = score_arm([r for r in rows if pred(r)])
+        if a["n"] == 0:
+            continue
+        n_disp = f"{a['n']} ⚠" if (label != "全局" and a["n"] < 5) else str(a["n"])
+        out.append(f"| {label} | {n_disp} | {_pct(a.get('exact_rate'))} "
+                   f"({a['exact']}/{a['n']}) | {_fmt(a.get('avg_distance'))} |")
+    out += ["", "> _比分距离=|Δ主|+|Δ客|,量 v1 出比分能力(had Brier 量不到)。"
+            "常规/动机畸形借 v2 判断,末轮/非末轮按轮次中立切。_", ""]
+    return out
+
+
+def render(collected, audits, score_rows=None, matchdays=None):
     lines = ["# 预测 v2 跑分卡(全盘口)", ""]
     for market, _ in MARKETS:
         data = collected[market]
@@ -117,15 +147,7 @@ def render(collected, audits, score=None, matchdays=None):
                 fs = d.get("factor_source") or "⚠无因子来源"
                 lines.append(f"- {mk_}: {d.get('outcome')}→{d.get('to')}% · {fs}")
         lines.append("")
-    if score and score.get("n"):
-        lines += ["## v1 比分臂(精确比分,had 概率臂之外)", "",
-                  f"参与场数: {score['n']}", "",
-                  "| 指标 | 值 |", "|---|---|",
-                  f"| 精确命中率 | {_pct(score.get('exact_rate'))} "
-                  f"({score['exact']}/{score['n']}) |",
-                  f"| 平均比分距离(越低越准) | {_fmt(score.get('avg_distance'))} |", "",
-                  "> _比分距离 = |Δ主队进球|+|Δ客队进球|;量 v1 出比分的能力,"
-                  "had 的 Brier 量不到这一臂。_", ""]
+    lines += _score_arm_lines(score_rows, matchdays)
     lines += ["_红线:概率预测非投注建议;v2 跑不赢市场就回归市场基线+避雷器。_"]
     return "\n".join(lines)
 
@@ -175,7 +197,7 @@ def collect(cache_path):
 
 
 def collect_score_arm(cache_path):
-    """每场 v1 比分预测 vs 实际,供 score_arm。无 v1 比分的场 pred=None(不计入指标)。"""
+    """每场 v1 比分预测 vs 实际(带场型 bucket),供 score_arm 分桶。无 v1 比分的场 pred=None。"""
     rows = []
     for mk in _result_keys(cache_path):
         goals = get_result_goals(cache_path, mk)
@@ -183,7 +205,11 @@ def collect_score_arm(cache_path):
             continue
         v1rec = get_v1(cache_path, mk)
         pred = parse_score(v1rec["score_pred"]) if v1rec else None
-        rows.append({"match_key": mk, "pred": pred, "actual": goals})
+        v2rec = get_v2_prediction(cache_path, mk)
+        _scen = (v2rec or {}).get("scenarios") or []
+        scen_names = [s.get("name") if isinstance(s, dict) else s for s in _scen]
+        bucket = bucket_of((v2rec or {}).get("reliability", ""), scen_names)
+        rows.append({"match_key": mk, "pred": pred, "actual": goals, "bucket": bucket})
     return rows
 
 
@@ -195,9 +221,9 @@ def main():
     a = ap.parse_args()
     collected = collect(a.cache)
     audits = {m: deviation_audit(collected[m]["rows"]) for m, _ in MARKETS}
-    score = score_arm(collect_score_arm(a.cache))
+    score_rows = collect_score_arm(a.cache)
     matchdays = _load_matchdays(a.wc_db)
-    md = render(collected, audits, score, matchdays)
+    md = render(collected, audits, score_rows, matchdays)
     os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
     with open(a.out, "w", encoding="utf-8") as f:
         f.write(md)
