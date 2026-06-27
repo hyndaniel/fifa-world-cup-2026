@@ -26,21 +26,25 @@ flowchart TB
     DS -->|"save_intel.py 只挑确证事实"| ENRICH["wc.db · enrich 事实卡"]
     ODDS --> CACHE["odds_cache.db · 带时间戳"]
 
-    subgraph BRAINS["三脑 · 独立 subagent · v1 与 v2 互不可见"]
+    subgraph BRAINS["预测脑 · v1 与 v2 互不可见(⊥)"]
         V1["v1 比分脑"]
         V2["v2 概率脑"]
-        VAL["价值脑"]
     end
+    ODDS_A["wc-odds · 盘口描述"]
+    BET["wc-bet · 下注决策"]
 
     DS -.->|读原文| V1
-    DS -.->|读原文| VAL
+    DS -.->|陷阱盘/动机| ODDS_A
     ENRICH -->|"match_fact_card 事实卡"| V2
     CACHE -->|"baseline_market 基线"| V2
-    CACHE --> VAL
+    CACHE --> ODDS_A
+    ODDS_A -->|共识/去水/异动| BET
+    V1 --> BET
+    V2 --> BET
 
     V1 --> JOIN["跨库 join → Decision"]
     V2 --> JOIN
-    VAL --> JOIN
+    BET --> JOIN
     JOIN -->|"POST /api/ingest/predictions"| DASH["HK 看板 · 手机决策卡"]
 ```
 
