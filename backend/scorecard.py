@@ -36,6 +36,37 @@ def aggregate(rows):
     return out
 
 
+def parse_score(s):
+    """"H-A" → (int, int);None/'无'/格式错/非数字 → None。"""
+    if not s or not isinstance(s, str):
+        return None
+    parts = s.strip().split("-")
+    if len(parts) != 2:
+        return None
+    try:
+        return (int(parts[0]), int(parts[1]))
+    except ValueError:
+        return None
+
+
+def score_arm(rows):
+    """v1 比分臂指标(had 概率臂之外另立)。rows=[{"pred":(ph,pa)|None,"actual":(ah,aa)}]。
+
+    只统计 pred 与 actual 都非 None 的场:精确命中率(预测比分==实际)+ 平均比分距离
+    (|Δ主|+|Δ客|,越低越准)。无可统计场 → rate/distance 为 None。
+    """
+    scored = [r for r in rows if r.get("pred") is not None and r.get("actual") is not None]
+    n = len(scored)
+    if n == 0:
+        return {"n": 0, "exact": 0, "exact_rate": None, "avg_distance": None}
+    exact = sum(1 for r in scored if tuple(r["pred"]) == tuple(r["actual"]))
+    dist = sum(abs(r["pred"][0] - r["actual"][0]) + abs(r["pred"][1] - r["actual"][1])
+               for r in scored)
+    return {"n": n, "exact": exact,
+            "exact_rate": round(exact / n, 4),
+            "avg_distance": round(dist / n, 4)}
+
+
 def deviation_audit(rows):
     dev = [r for r in rows if r.get("deviated")]
     if not dev:

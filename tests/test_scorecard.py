@@ -1,5 +1,35 @@
 # tests/test_scorecard.py
-from backend.scorecard import three_way, aggregate, deviation_audit, bucket_of
+from backend.scorecard import (three_way, aggregate, deviation_audit, bucket_of,
+                               parse_score, score_arm)
+
+
+def test_parse_score():
+    assert parse_score("1-2") == (1, 2)
+    assert parse_score(" 0-0 ") == (0, 0)
+    assert parse_score("无") is None        # 占位
+    assert parse_score("") is None
+    assert parse_score(None) is None
+    assert parse_score("1:2") is None        # 非 - 分隔
+    assert parse_score("a-b") is None        # 非数字
+
+
+def test_score_arm_metrics():
+    rows = [
+        {"pred": (0, 2), "actual": (0, 2)},   # 精确命中,距离 0
+        {"pred": (1, 0), "actual": (0, 0)},   # 距离 1
+        {"pred": (1, 2), "actual": (1, 4)},   # 距离 2
+        {"pred": None, "actual": (1, 1)},     # 无 v1 比分 → 不计入
+    ]
+    out = score_arm(rows)
+    assert out["n"] == 3                       # None 那条不计
+    assert out["exact"] == 1
+    assert out["exact_rate"] == round(1 / 3, 4)
+    assert out["avg_distance"] == round((0 + 1 + 2) / 3, 4)
+
+
+def test_score_arm_empty():
+    out = score_arm([{"pred": None, "actual": (1, 0)}])
+    assert out["n"] == 0 and out["exact_rate"] is None and out["avg_distance"] is None
 
 
 def test_bucket_of_reliability_luan_is_anomaly():
