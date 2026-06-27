@@ -3,7 +3,9 @@
 from .scoring import brier_multi
 
 # 末轮动机畸形的剧本关键词(对照 backend/scenarios.py 的套路名,子串匹配自由文本 scenario)。
-_ANOMALY_KEYWORDS = ("死亡橡皮擦", "默契平", "生死战", "摆大巴", "大巴")
+# 含 1X2 混沌型四套路:死亡橡皮擦轮换 / 默契平 / 生死战必有胜负 / (被)摆大巴逼平。
+# "强队刷净胜球"有意排除——它是攻击型(影响让球/大小球),非胜平负动机倒挂。
+_ANOMALY_KEYWORDS = ("死亡橡皮擦", "默契平", "生死战", "大巴")
 
 
 def bucket_of(reliability, scenario_names=None):

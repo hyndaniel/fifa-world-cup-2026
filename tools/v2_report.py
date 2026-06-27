@@ -35,6 +35,9 @@ def _bucket_lines(per_match):
 
     单桶 n<5 标 ⚠(末轮畸形场稀少,小样本只能定性、别拿几场判 v1 死刑)。空桶不出行。
     """
+    if not per_match:
+        return []
+
     def agg_where(pred):
         return aggregate([{"v1": p["brier"]["v1"], "v2": p["brier"]["v2"],
                            "market": p["brier"]["market"]} for p in per_match if pred(p)])
@@ -51,6 +54,7 @@ def _bucket_lines(per_match):
         n_disp = f"{a['n']} ⚠" if (label != "全局" and a["n"] < 5) else str(a["n"])
         out.append(f"| {label} | {n_disp} | {_fmt(a.get('v1_mean'))} | "
                    f"{_fmt(a.get('v2_mean'))} | {_fmt(a.get('market_mean'))} |")
+    out.append("> _n=该桶场数;v1/v2 列只均有该方预测的场(无 v1/v2 的场只计入市场列)。_")
     return out + [""]
 
 
