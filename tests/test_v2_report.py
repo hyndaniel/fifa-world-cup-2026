@@ -6,7 +6,9 @@ import tempfile
 
 from backend.baseline import HAD_CFG, baseline_market, record_result
 from backend.v2_predict import build_v2_prediction, record_v2_prediction
-from tools.v2_report import collect, render
+from backend.scorecard import score_arm
+from backend.v1_log import record_v1
+from tools.v2_report import collect, collect_score_arm, render
 
 
 def _collected_one_market():
@@ -78,6 +80,39 @@ def test_render_bucket_table_splits_regular_vs_anomaly():
     assert "| 全局 | 2 |" in md                  # 全局 n=2,无 ⚠
     assert "| 常规 | 1" in md and "| 动机畸形 | 1" in md
     assert "⚠" in md                            # 单桶 n<5 带小样本警示
+
+
+def test_render_v1_score_arm_section():
+    collected = _collected_one_market()
+    audits = {m: {"n_deviated": 0, "v2_mean": None, "market_mean": None, "delta": None}
+              for m in ("had", "hhad", "ttg")}
+    score = {"n": 12, "exact": 1, "exact_rate": 0.0833, "avg_distance": 1.8333}
+    md = render(collected, audits, score)
+    assert "v1 比分臂" in md
+    assert "参与场数: 12" in md
+    assert "8.3%" in md and "1/12" in md         # 精确命中率
+    assert "1.83" in md                          # 平均比分距离
+
+
+def test_render_without_score_arm_back_compat():
+    # 不传 score → 不渲染比分臂段(既有调用兼容)
+    md = render(_collected_one_market(),
+                {m: {"n_deviated": 0, "v2_mean": None, "market_mean": None, "delta": None}
+                 for m in ("had", "hhad", "ttg")})
+    assert "v1 比分臂" not in md
+
+
+def test_collect_score_arm_builds_rows(tmp_path):
+    db = str(tmp_path / "c.db")
+    record_result(db, "周四055", 2, 1)              # 实际 2-1
+    record_v1(db, "周四055", {"h": 0.3, "d": 0.3, "a": 0.4}, "0-1")  # v1 比分 0-1
+    record_result(db, "周三049", 1, 0)              # 实际,但无 v1
+    rows = collect_score_arm(db)
+    by_key = {r["match_key"]: r for r in rows}
+    assert by_key["周四055"]["pred"] == (0, 1) and by_key["周四055"]["actual"] == (2, 1)
+    assert by_key["周三049"]["pred"] is None        # 无 v1 比分 → pred None
+    out = score_arm(rows)
+    assert out["n"] == 1                            # 只 1 场有 v1 比分
 
 
 def test_render_deviation_attribution_lists_factor_source():

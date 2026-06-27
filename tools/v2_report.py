@@ -11,7 +11,8 @@ import sys
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO not in sys.path:
     sys.path.insert(0, REPO)
-from backend.scorecard import aggregate, bucket_of, deviation_audit, three_way  # noqa: E402
+from backend.scorecard import (aggregate, bucket_of, deviation_audit,  # noqa: E402
+                               parse_score, score_arm, three_way)
 from backend.baseline import baseline_market, MARKETS, get_result_goals, _actual_for  # noqa: E402
 from backend.v2_predict import get_v2_prediction  # noqa: E402
 from backend.v1_log import get_v1  # noqa: E402
@@ -28,6 +29,10 @@ def _fmt(x):
     if isinstance(x, (int, float)):
         return f"{x:.2f}"
     return "—" if x is None else x
+
+
+def _pct(x):
+    return f"{x * 100:.1f}%" if isinstance(x, (int, float)) else "—"
 
 
 def _bucket_lines(per_match):
@@ -58,7 +63,7 @@ def _bucket_lines(per_match):
     return out + [""]
 
 
-def render(collected, audits):
+def render(collected, audits, score=None):
     lines = ["# 预测 v2 跑分卡(全盘口)", ""]
     for market, _ in MARKETS:
         data = collected[market]
@@ -90,6 +95,15 @@ def render(collected, audits):
                 fs = d.get("factor_source") or "⚠无因子来源"
                 lines.append(f"- {mk_}: {d.get('outcome')}→{d.get('to')}% · {fs}")
         lines.append("")
+    if score:
+        lines += ["## v1 比分臂(精确比分,had 概率臂之外)", "",
+                  f"参与场数: {score['n']}", "",
+                  "| 指标 | 值 |", "|---|---|",
+                  f"| 精确命中率 | {_pct(score.get('exact_rate'))} "
+                  f"({score['exact']}/{score['n']}) |",
+                  f"| 平均比分距离(越低越准) | {_fmt(score.get('avg_distance'))} |", "",
+                  "> _比分距离 = |Δ主队进球|+|Δ客队进球|;量 v1 出比分的能力,"
+                  "had 的 Brier 量不到这一臂。_", ""]
     lines += ["_红线:概率预测非投注建议;v2 跑不赢市场就回归市场基线+避雷器。_"]
     return "\n".join(lines)
 
@@ -138,6 +152,19 @@ def collect(cache_path):
     return out
 
 
+def collect_score_arm(cache_path):
+    """每场 v1 比分预测 vs 实际,供 score_arm。无 v1 比分的场 pred=None(不计入指标)。"""
+    rows = []
+    for mk in _result_keys(cache_path):
+        goals = get_result_goals(cache_path, mk)
+        if not goals:
+            continue
+        v1rec = get_v1(cache_path, mk)
+        pred = parse_score(v1rec["score_pred"]) if v1rec else None
+        rows.append({"match_key": mk, "pred": pred, "actual": goals})
+    return rows
+
+
 def main():
     ap = argparse.ArgumentParser(description="渲染 v2 全盘口跑分卡")
     ap.add_argument("--cache", default=DEFAULT_CACHE)
@@ -145,7 +172,8 @@ def main():
     a = ap.parse_args()
     collected = collect(a.cache)
     audits = {m: deviation_audit(collected[m]["rows"]) for m, _ in MARKETS}
-    md = render(collected, audits)
+    score = score_arm(collect_score_arm(a.cache))
+    md = render(collected, audits, score)
     os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
     with open(a.out, "w", encoding="utf-8") as f:
         f.write(md)
