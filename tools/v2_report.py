@@ -51,6 +51,13 @@ def _pct(x):
     return f"{x * 100:.1f}%" if isinstance(x, (int, float)) else "—"
 
 
+def _bucket_for_match(v2rec):
+    """从 v2 预测记录派生场型 bucket(常规/动机畸形);借 reliability/scenarios,post-hoc。"""
+    scen = (v2rec or {}).get("scenarios") or []
+    names = [s.get("name") if isinstance(s, dict) else s for s in scen]
+    return bucket_of((v2rec or {}).get("reliability", ""), names)
+
+
 def _bucket_lines(per_match, matchdays=None):
     """每盘口"按场型分桶"子表:全局 + 常规/动机畸形(借 v2 判断)+ 末轮/非末轮(中立)。
 
@@ -173,9 +180,7 @@ def collect(cache_path):
         hg, ag = goals
         v2rec = get_v2_prediction(cache_path, mk)
         v1rec = get_v1(cache_path, mk)
-        _scen = (v2rec or {}).get("scenarios") or []
-        scen_names = [s.get("name") if isinstance(s, dict) else s for s in _scen]
-        mk_bucket = bucket_of((v2rec or {}).get("reliability", ""), scen_names)
+        mk_bucket = _bucket_for_match(v2rec)
         for market, cfg in MARKETS:
             bl = baseline_market(cache_path, mk, cfg)
             if not bl:
@@ -206,10 +211,8 @@ def collect_score_arm(cache_path):
         v1rec = get_v1(cache_path, mk)
         pred = parse_score(v1rec["score_pred"]) if v1rec else None
         v2rec = get_v2_prediction(cache_path, mk)
-        _scen = (v2rec or {}).get("scenarios") or []
-        scen_names = [s.get("name") if isinstance(s, dict) else s for s in _scen]
-        bucket = bucket_of((v2rec or {}).get("reliability", ""), scen_names)
-        rows.append({"match_key": mk, "pred": pred, "actual": goals, "bucket": bucket})
+        rows.append({"match_key": mk, "pred": pred, "actual": goals,
+                     "bucket": _bucket_for_match(v2rec)})
     return rows
 
 
