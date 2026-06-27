@@ -1,6 +1,26 @@
 # tests/test_scorecard.py
 from backend.scorecard import (three_way, aggregate, deviation_audit, bucket_of,
-                               parse_score, score_arm)
+                               parse_score, score_arm, derive_matchdays)
+
+
+def test_derive_matchdays_four_team_group():
+    # 4 队组(A/B/C/D)6 场 3 轮:同组两队同步推进,末轮=第3次出场
+    matches = [
+        ("M1", "A", "B", "2026-06-16 00:00"),
+        ("M2", "C", "D", "2026-06-16 03:00"),
+        ("M3", "A", "C", "2026-06-20 00:00"),
+        ("M4", "B", "D", "2026-06-20 03:00"),
+        ("M5", "A", "D", "2026-06-24 00:00"),
+        ("M6", "B", "C", "2026-06-24 03:00"),
+    ]
+    assert derive_matchdays(matches) == {"M1": 1, "M2": 1, "M3": 2, "M4": 2, "M5": 3, "M6": 3}
+
+
+def test_derive_matchdays_sorts_by_ko():
+    # 乱序输入按 ko 升序数轮次
+    matches = [("M5", "A", "D", "2026-06-24 00:00"), ("M1", "A", "B", "2026-06-16 00:00")]
+    md = derive_matchdays(matches)
+    assert md["M1"] == 1 and md["M5"] == 2
 
 
 def test_parse_score():

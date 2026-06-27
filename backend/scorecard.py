@@ -36,6 +36,22 @@ def aggregate(rows):
     return out
 
 
+def derive_matchdays(matches):
+    """按出场次数推每场小组赛轮次(中立分桶用,不靠 v2 判断)。
+
+    同组两队同步推进,故场次轮次 = max(两队此前出场数)+1;末轮=第3次出场(round==3)。
+    matches=iterable of (zucai_num, home, away, ko);按 (ko, zucai_num) 升序数。
+    返回 {zucai_num: round_int}。淘汰赛会算出 >3,调用方按需处理。
+    """
+    out = {}
+    seen = {}
+    for zn, h, a, ko in sorted(matches, key=lambda m: (m[3] or "", m[0])):
+        out[zn] = max(seen.get(h, 0), seen.get(a, 0)) + 1
+        seen[h] = seen.get(h, 0) + 1
+        seen[a] = seen.get(a, 0) + 1
+    return out
+
+
 def parse_score(s):
     """"H-A" → (int, int);None/'无'/格式错/非数字 → None。"""
     if not s or not isinstance(s, str):
