@@ -82,6 +82,27 @@ def test_render_bucket_table_splits_regular_vs_anomaly():
     assert "⚠" in md                            # 单桶 n<5 带小样本警示
 
 
+def test_render_bucket_table_adds_matchday_cut():
+    collected = {
+        "had": {"rows": [], "per_match": [
+            {"match_key": "M1", "reliability": "中", "bucket": "常规",
+             "brier": {"v1": 0.6, "v2": 0.5, "market": 0.52}},
+            {"match_key": "M5", "reliability": "乱", "bucket": "动机畸形",
+             "brier": {"v1": 0.4, "v2": 0.55, "market": 0.58}},
+        ]},
+        "hhad": {"rows": [], "per_match": []},
+        "ttg": {"rows": [], "per_match": []},
+    }
+    audits = {m: {"n_deviated": 0, "v2_mean": None, "market_mean": None, "delta": None}
+              for m in ("had", "hhad", "ttg")}
+    matchdays = {"M1": 2, "M5": 3}               # M1 非末轮,M5 末轮
+    md = render(collected, audits, matchdays=matchdays)
+    assert "| 非末轮 | 1" in md                  # 中立切:matchday∈{1,2}
+    assert "| 末轮 | 1" in md                    # matchday==3
+    # 既有 v2-judged 切仍在
+    assert "| 常规 | 1" in md and "| 动机畸形 | 1" in md
+
+
 def test_render_v1_score_arm_section():
     collected = _collected_one_market()
     audits = {m: {"n_deviated": 0, "v2_mean": None, "market_mean": None, "delta": None}
