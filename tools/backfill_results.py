@@ -59,7 +59,8 @@ def _team_names(wc_db_path: str) -> dict:
     """zucai_num → "主队 vs 客队"(中文),取自 wc.db matches;库/表缺失 → 空 dict(队名留空)。"""
     names: dict = {}
     try:
-        conn = sqlite3.connect(wc_db_path)
+        # 真只读(mode=ro):库缺失直接报错走 graceful,绝不创建空 wc.db。
+        conn = sqlite3.connect(f"file:{wc_db_path}?mode=ro", uri=True)
     except sqlite3.Error:
         return names
     try:
