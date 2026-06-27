@@ -1,5 +1,25 @@
 # tests/test_scorecard.py
-from backend.scorecard import three_way, aggregate, deviation_audit
+from backend.scorecard import three_way, aggregate, deviation_audit, bucket_of
+
+
+def test_bucket_of_reliability_luan_is_anomaly():
+    # reliability=='乱'(动机倒挂)→ 动机畸形,即便无 scenario
+    assert bucket_of("乱", []) == "动机畸形"
+    assert bucket_of("乱", None) == "动机畸形"
+
+
+def test_bucket_of_scenario_keyword_is_anomaly():
+    # scenario 名含末轮畸形关键词 → 动机畸形(即便 reliability 非乱)
+    assert bucket_of("中", ["生死战必有胜负"]) == "动机畸形"
+    assert bucket_of("中", ["死亡橡皮擦轮换"]) == "动机畸形"
+    assert bucket_of("稳", ["双方平即出线·默契平"]) == "动机畸形"
+
+
+def test_bucket_of_regular():
+    # 非乱 + 无畸形关键词 → 常规
+    assert bucket_of("中", ["重盘热门·poly独源软锚"]) == "常规"
+    assert bucket_of("稳", []) == "常规"
+    assert bucket_of("", None) == "常规"
 
 
 def test_three_way_briers():

@@ -1,6 +1,23 @@
 # backend/scorecard.py
-"""三方 Brier 跑分卡 + 偏离审计。"""
+"""三方 Brier 跑分卡 + 偏离审计 + 按场型分桶。"""
 from .scoring import brier_multi
+
+# 末轮动机畸形的剧本关键词(对照 backend/scenarios.py 的套路名,子串匹配自由文本 scenario)。
+_ANOMALY_KEYWORDS = ("死亡橡皮擦", "默契平", "生死战", "摆大巴", "大巴")
+
+
+def bucket_of(reliability, scenario_names=None):
+    """场型分桶:'动机畸形'(末轮动机倒挂/大轮换/默契平/生死战/摆大巴)vs '常规'。
+
+    判定:reliability=='乱'(v2 自评动机倒挂)或任一 scenario 名含畸形关键词 → '动机畸形';
+    否则 '常规'。借的是 v2 的 post-hoc 判断(不破 v1⊥v2 红线),供跑分卡切片对照用。
+    """
+    if reliability == "乱":
+        return "动机畸形"
+    for name in scenario_names or []:
+        if any(kw in (name or "") for kw in _ANOMALY_KEYWORDS):
+            return "动机畸形"
+    return "常规"
 
 
 def three_way(v1, v2, market, actual):
