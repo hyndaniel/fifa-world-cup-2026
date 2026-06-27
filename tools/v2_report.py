@@ -95,7 +95,7 @@ def render(collected, audits, score=None):
                 fs = d.get("factor_source") or "⚠无因子来源"
                 lines.append(f"- {mk_}: {d.get('outcome')}→{d.get('to')}% · {fs}")
         lines.append("")
-    if score:
+    if score and score.get("n"):
         lines += ["## v1 比分臂(精确比分,had 概率臂之外)", "",
                   f"参与场数: {score['n']}", "",
                   "| 指标 | 值 |", "|---|---|",
