@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""把 deep-search 抽出的确证事实写进 enrich 表, 供 wc-forecaster-v2 的 match_fact_card 读取。
+"""把 deep-search 抽出的确证事实写进 enrich 表, 供 wc-prob-v2 的 match_fact_card 读取。
 
 设计 (B2 共享情报层 · v2 那条):
 - 上游 `/deep-research` → reports/deep-search-*.md (中立赛前情报)。
