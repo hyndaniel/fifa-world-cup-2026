@@ -57,6 +57,27 @@ def test_collect_smoke_db_assembles_per_market():
     assert mk in keys                                       # had 含已播种场次
     pm = next(pm for pm in out["had"]["per_match"] if pm["match_key"] == mk)
     assert pm["brier"]["market"] is not None               # 市场基线对实际结果可打分
+    assert pm["bucket"] == "动机畸形"                       # reliability='乱' → 动机畸形桶
+
+
+def test_render_bucket_table_splits_regular_vs_anomaly():
+    collected = {
+        "had": {"rows": [], "per_match": [
+            {"match_key": "A", "reliability": "中", "bucket": "常规",
+             "brier": {"v1": 0.60, "v2": 0.50, "market": 0.52}},
+            {"match_key": "B", "reliability": "乱", "bucket": "动机畸形",
+             "brier": {"v1": 0.40, "v2": 0.55, "market": 0.58}},
+        ]},
+        "hhad": {"rows": [], "per_match": []},
+        "ttg": {"rows": [], "per_match": []},
+    }
+    audits = {m: {"n_deviated": 0, "v2_mean": None, "market_mean": None, "delta": None}
+              for m in ("had", "hhad", "ttg")}
+    md = render(collected, audits)
+    assert "按场型分桶" in md
+    assert "| 全局 | 2 |" in md                  # 全局 n=2,无 ⚠
+    assert "| 常规 | 1" in md and "| 动机畸形 | 1" in md
+    assert "⚠" in md                            # 单桶 n<5 带小样本警示
 
 
 def test_render_deviation_attribution_lists_factor_source():

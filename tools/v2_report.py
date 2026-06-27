@@ -11,7 +11,7 @@ import sys
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO not in sys.path:
     sys.path.insert(0, REPO)
-from backend.scorecard import aggregate, deviation_audit, three_way  # noqa: E402
+from backend.scorecard import aggregate, bucket_of, deviation_audit, three_way  # noqa: E402
 from backend.baseline import baseline_market, MARKETS, get_result_goals, _actual_for  # noqa: E402
 from backend.v2_predict import get_v2_prediction  # noqa: E402
 from backend.v1_log import get_v1  # noqa: E402
@@ -30,6 +30,34 @@ def _fmt(x):
     return "—" if x is None else x
 
 
+def _bucket_lines(per_match):
+    """每盘口"按场型分桶"子表:全局/常规/动机畸形,各切片调 aggregate(越低越准)。
+
+    单桶 n<5 标 ⚠(末轮畸形场稀少,小样本只能定性、别拿几场判 v1 死刑)。空桶不出行。
+    """
+    if not per_match:
+        return []
+
+    def agg_where(pred):
+        return aggregate([{"v1": p["brier"]["v1"], "v2": p["brier"]["v2"],
+                           "market": p["brier"]["market"]} for p in per_match if pred(p)])
+
+    specs = [("全局", lambda p: True),
+             ("常规", lambda p: p.get("bucket", "常规") == "常规"),
+             ("动机畸形", lambda p: p.get("bucket", "常规") == "动机畸形")]
+    out = ["**按场型分桶**(同盘口切片):", "",
+           "| 分桶 | n | v1 | v2 | 市场 |", "|---|---|---|---|---|"]
+    for label, pred in specs:
+        a = agg_where(pred)
+        if a["n"] == 0:
+            continue
+        n_disp = f"{a['n']} ⚠" if (label != "全局" and a["n"] < 5) else str(a["n"])
+        out.append(f"| {label} | {n_disp} | {_fmt(a.get('v1_mean'))} | "
+                   f"{_fmt(a.get('v2_mean'))} | {_fmt(a.get('market_mean'))} |")
+    out.append("> _n=该桶场数;v1/v2 列只均有该方预测的场(无 v1/v2 的场只计入市场列)。_")
+    return out + [""]
+
+
 def render(collected, audits):
     lines = ["# 预测 v2 跑分卡(全盘口)", ""]
     for market, _ in MARKETS:
@@ -42,6 +70,7 @@ def render(collected, audits):
                   f"| v1(老方法) | {_fmt(agg.get('v1_mean'))} |",
                   f"| **v2** | **{_fmt(agg.get('v2_mean'))}** |",
                   f"| 市场基线 | {_fmt(agg.get('market_mean'))} |", ""]
+        lines += _bucket_lines(data["per_match"])
         audit = audits.get(market, {})
         if audit.get("delta") is not None:
             verdict = ("偏离平均**拉低** Brier(有用)" if audit["delta"] < 0
@@ -86,6 +115,9 @@ def collect(cache_path):
         hg, ag = goals
         v2rec = get_v2_prediction(cache_path, mk)
         v1rec = get_v1(cache_path, mk)
+        _scen = (v2rec or {}).get("scenarios") or []
+        scen_names = [s.get("name") if isinstance(s, dict) else s for s in _scen]
+        mk_bucket = bucket_of((v2rec or {}).get("reliability", ""), scen_names)
         for market, cfg in MARKETS:
             bl = baseline_market(cache_path, mk, cfg)
             if not bl:
@@ -101,6 +133,7 @@ def collect(cache_path):
             devs = ((v2rec or {}).get("markets", {}).get(market) or {}).get("deviations") or []
             out[market]["per_match"].append({"match_key": mk,
                                              "reliability": (v2rec or {}).get("reliability", ""),
+                                             "bucket": mk_bucket,
                                              "brier": b, "deviations": devs})
     return out
 
