@@ -108,18 +108,47 @@ def _empty_odds(db):
     conn.close()
 
 
-def test_write_mech_tags_appends_row_with_header(tmp_path):
+def _seed_wc_names(path, rows):
+    """临时 wc.db,matches 表给队名(zucai_num, home_cn, away_cn)。"""
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE matches (zucai_num TEXT, home_cn TEXT, away_cn TEXT)")
+    conn.executemany("INSERT INTO matches VALUES (?,?,?)", rows)
+    conn.commit()
+    conn.close()
+
+
+def test_render_mech_tags_regenerates_with_names_and_legend(tmp_path):
+    db = str(tmp_path / "t.db")
+    _empty_odds(db)
+    B.backfill(db, [MatchResult("周四055", 2, 0, True), MatchResult("周五061", 0, 1, True)])
+    wc = str(tmp_path / "wc.db")
+    _seed_wc_names(wc, [("周四055", "土耳其", "美国"), ("周五061", "挪威", "法国")])
+    out = tmp_path / "ledger.md"
+
+    B.render_mech_tags(db, str(out), wc)
+    text = out.read_text(encoding="utf-8")
+    # h/d/a 图例
+    assert "**h**=主胜" in text and "**d**=平" in text and "**a**=客胜" in text
+    # 对阵列 + 队名补全
+    assert "| 对阵 |" in text
+    assert "土耳其 vs 美国" in text and "挪威 vs 法国" in text
+    # 两场都在(actual: 周四055 2:0=h, 周五061 0:1=a)
+    assert "| 周四055 |" in text and "| 周五061 |" in text
+
+    # 确定性重生成:再跑内容完全一致、表头只一份
+    B.render_mech_tags(db, str(out), wc)
+    text2 = out.read_text(encoding="utf-8")
+    assert text2 == text
+    assert text2.count("| 对阵 |") == 1
+
+
+def test_render_mech_tags_blank_name_when_wc_db_missing(tmp_path):
+    # wc.db 不存在 → 队名留空,不崩
     db = str(tmp_path / "t.db")
     _empty_odds(db)
     B.backfill(db, [MatchResult("周四055", 2, 0, True)])
     out = tmp_path / "ledger.md"
-    B.write_mech_tags(db, ["周四055"], str(out))
+    B.render_mech_tags(db, str(out), str(tmp_path / "nope.db"))
     text = out.read_text(encoding="utf-8")
-    assert "| 场次 |" in text                          # 文件新建时写表头
-    assert "| 周四055 |" in text                        # 该场一行
-    # 再追加另一场:不重复表头
-    B.backfill(db, [MatchResult("周五099", 1, 0, True)])
-    B.write_mech_tags(db, ["周五099"], str(out))
-    text2 = out.read_text(encoding="utf-8")
-    assert text2.count("| 场次 |") == 1
-    assert "| 周五099 |" in text2
+    assert "| 周四055 |" in text                        # 行在,对阵列空
+    assert "| 对阵 |" in text

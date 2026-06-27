@@ -2,13 +2,14 @@
 """赛果回填闭环编排:抓终比分 → record_result(幂等)→ 机械对错标台账 → 重跑跑分卡。
 
 --once 是唯一运行模式(单跑单退),供 launchd 每 5 分钟无害重跑:已录的场次 upsert
-不重复;跑分卡每次无条件重跑(确定性、内容不变即无 diff),故上次崩了下次自愈。
+不重复;台账与跑分卡每次都从 db 全量重生成(确定性、内容不变即无 diff),故上次崩了
+下次自愈。台账(复盘对错标)从 match_results 重建,带对阵队名(查 wc.db)+ h/d/a 图例。
 """
 from __future__ import annotations
 
 import argparse
-import datetime
 import pathlib
+import sqlite3
 import sys
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
@@ -22,11 +23,18 @@ from backend.mech_tag import mech_tags  # noqa: E402
 
 DEFAULT_CACHE = str(REPO / ".cache" / "odds_cache.db")
 DEFAULT_TAGS_OUT = str(REPO / "reports" / "复盘对错标.md")
+DEFAULT_WC_DB = str(REPO / "data" / "wc.db")
+
+_RESULTS_SCHEMA = (
+    "CREATE TABLE IF NOT EXISTS match_results (match_key TEXT PRIMARY KEY, "
+    "home_goals INTEGER, away_goals INTEGER, outcome TEXT, ts TEXT)"
+)
 
 _LEDGER_HEADER = (
     "# 复盘对错标(机械·纯事实)\n\n"
-    "> 每场实际 outcome 对三方 had argmax 的对错:✅中 / ❌错 / —无预测。\n\n"
-    "| ts | 场次 | 实际 | v1 | v2 | 市场 |\n|---|---|---|---|---|---|\n"
+    "> 每场实际 outcome(胜平负 had)对三方 had argmax 预测的对错:✅中 / ❌错 / —无预测。\n"
+    "> 结果代码(主队视角):**h**=主胜 / **d**=平 / **a**=客胜。\n\n"
+    "| ts | 场次 | 对阵 | 实际 | v1 | v2 | 市场 |\n|---|---|---|---|---|---|---|\n"
 )
 
 
@@ -47,26 +55,50 @@ def backfill(cache_path: str, results: list[MatchResult]) -> list[str]:
     return done
 
 
-def write_mech_tags(cache_path: str, keys: list[str], out_path: str) -> None:
-    """把这些 key 的 mech_tags 追加进台账 markdown(带时间戳表格行)。
+def _team_names(wc_db_path: str) -> dict:
+    """zucai_num → "主队 vs 客队"(中文),取自 wc.db matches;库/表缺失 → 空 dict(队名留空)。"""
+    names: dict = {}
+    try:
+        # 真只读(mode=ro):库缺失直接报错走 graceful,绝不创建空 wc.db。
+        conn = sqlite3.connect(f"file:{wc_db_path}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return names
+    try:
+        for num, home, away in conn.execute("SELECT zucai_num, home_cn, away_cn FROM matches"):
+            if num:
+                names[num] = f"{home or ''} vs {away or ''}"
+    except sqlite3.Error:
+        pass
+    finally:
+        conn.close()
+    return names
 
-    文件不存在则先写表头;存在则只追加行(launchd 重跑只增量,不重复表头)。
+
+def render_mech_tags(cache_path: str, out_path: str, wc_db_path: str = DEFAULT_WC_DB) -> None:
+    """从 match_results 全量重生成复盘对错标台账(确定性、自愈,同跑分卡)。
+
+    每行:记录时间 ts + 场次 + 对阵(查 wc.db 队名)+ 实际 outcome + 三方 had argmax 对错。
+    内容仅取决于 match_results + 各方预测,故重跑稳定无 diff;一次性补全历史行的队名。
     """
-    if not keys:
-        return
+    conn = sqlite3.connect(cache_path)
+    try:
+        conn.execute(_RESULTS_SCHEMA)  # 防御:从未录过赛果时表不存在
+        rows = conn.execute(
+            "SELECT match_key, ts FROM match_results ORDER BY ts, match_key"
+        ).fetchall()
+    finally:
+        conn.close()
+    names = _team_names(wc_db_path)
+    lines = [_LEDGER_HEADER]
+    for key, ts in rows:
+        t = mech_tags(cache_path, key)
+        lines.append(
+            f"| {ts} | {key} | {names.get(key, '')} | "
+            f"{t['actual']} | {t['v1']} | {t['v2']} | {t['market']} |\n"
+        )
     p = pathlib.Path(out_path)
     p.parent.mkdir(parents=True, exist_ok=True)
-    ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-    lines: list[str] = []
-    if not p.exists():
-        lines.append(_LEDGER_HEADER)
-    for k in keys:
-        t = mech_tags(cache_path, k)
-        lines.append(
-            f"| {ts} | {k} | {t['actual']} | {t['v1']} | {t['v2']} | {t['market']} |\n"
-        )
-    with p.open("a", encoding="utf-8") as f:
-        f.write("".join(lines))
+    p.write_text("".join(lines), encoding="utf-8")
 
 
 def _rerun_scorecard(cache_path: str) -> None:
@@ -90,6 +122,7 @@ def main(argv=None) -> int:
                     help="唯一运行模式:单跑单退(供 launchd);无此 flag 行为相同")
     ap.add_argument("--cache", default=DEFAULT_CACHE)
     ap.add_argument("--tags-out", default=DEFAULT_TAGS_OUT)
+    ap.add_argument("--wc-db", default=DEFAULT_WC_DB, help="队名来源(wc.db matches)")
     args = ap.parse_args(argv)
 
     try:
@@ -99,21 +132,16 @@ def main(argv=None) -> int:
         return 1
 
     keys = backfill(args.cache, results)
-    # 台账写入只在有新 keys 时做(append、非幂等,不能每次刷)。
-    if keys:
-        write_mech_tags(args.cache, keys, args.tags_out)
-        print(f"[backfill] 已录 {len(keys)} 场: {keys}")
-    else:
-        print("[backfill] 无新赛果可录")
+    print(f"[backfill] 已录 {len(keys)} 场: {keys}" if keys else "[backfill] 无新赛果可录")
 
-    # 跑分卡重跑无条件执行(自愈):它是确定性的(同一 db → 同样的预测v2.md,
-    # 内容不变即无害)。即便上次重跑崩了进程退,本次也会重新生成——这正是
-    # launchd 每 5 分钟自愈的意义,故不被"本次有无新赛果"门控。
-    # 用 try 包裹:失败 signal 非 0,但不吞掉前面已成功的 record/台账。
+    # 台账 + 跑分卡都从 db 全量重生成:确定性、自愈,不被"本次有无新赛果"门控
+    # (上次崩了本次补)。台账重生成同时一次性补全历史行的队名。
+    # try 包裹:失败 signal 1,但前面已成功的 record 不被吞。
     try:
+        render_mech_tags(args.cache, args.tags_out, args.wc_db)
         _rerun_scorecard(args.cache)
-    except Exception as e:  # noqa: BLE001 重跑任何失败都 signal 1,record/台账已落地
-        print(f"[backfill] 重跑跑分卡失败: {e}", file=sys.stderr)
+    except Exception as e:  # noqa: BLE001 重生成台账/重跑跑分卡任何失败都 signal 1
+        print(f"[backfill] 重生成台账/跑分卡失败: {e}", file=sys.stderr)
         return 1
     return 0
 
