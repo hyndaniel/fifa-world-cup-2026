@@ -103,16 +103,25 @@ def test_render_bucket_table_adds_matchday_cut():
     assert "| 常规 | 1" in md and "| 动机畸形 | 1" in md
 
 
-def test_render_v1_score_arm_section():
+def test_render_v1_score_arm_section_bucketed():
     collected = _collected_one_market()
     audits = {m: {"n_deviated": 0, "v2_mean": None, "market_mean": None, "delta": None}
               for m in ("had", "hhad", "ttg")}
-    score = {"n": 12, "exact": 1, "exact_rate": 0.0833, "avg_distance": 1.8333}
-    md = render(collected, audits, score)
-    assert "v1 比分臂" in md
-    assert "参与场数: 12" in md
-    assert "8.3%" in md and "1/12" in md         # 精确命中率
-    assert "1.83" in md                          # 平均比分距离
+    # 4 场 v1 比分:2 常规(1 精确命中)+ 2 动机畸形(0 命中);M3/M4 末轮
+    score_rows = [
+        {"match_key": "M1", "pred": (1, 0), "actual": (1, 0), "bucket": "常规"},     # 命中
+        {"match_key": "M2", "pred": (2, 0), "actual": (1, 1), "bucket": "常规"},     # 距离2
+        {"match_key": "M3", "pred": (0, 1), "actual": (0, 3), "bucket": "动机畸形"},  # 距离2
+        {"match_key": "M4", "pred": (1, 1), "actual": (3, 2), "bucket": "动机畸形"},  # 距离3
+    ]
+    matchdays = {"M1": 2, "M2": 2, "M3": 3, "M4": 3}    # M3/M4 末轮
+    md = render(collected, audits, score_rows, matchdays)
+    assert "## v1 比分臂" in md
+    assert "| 全局 | 4 |" in md                  # 4 场全局
+    assert "| 常规 | 2" in md and "| 动机畸形 | 2" in md
+    assert "| 末轮 | 2" in md and "| 非末轮 | 2" in md   # 中立切
+    assert "50.0%" in md                          # 常规 1/2 命中
+    assert "⚠" in md                              # 单桶 n<5
 
 
 def test_render_without_score_arm_back_compat():
@@ -131,6 +140,7 @@ def test_collect_score_arm_builds_rows(tmp_path):
     rows = collect_score_arm(db)
     by_key = {r["match_key"]: r for r in rows}
     assert by_key["周四055"]["pred"] == (0, 1) and by_key["周四055"]["actual"] == (2, 1)
+    assert by_key["周四055"]["bucket"] == "常规"     # 无 v2rec → 默认常规
     assert by_key["周三049"]["pred"] is None        # 无 v1 比分 → pred None
     out = score_arm(rows)
     assert out["n"] == 1                            # 只 1 场有 v1 比分
