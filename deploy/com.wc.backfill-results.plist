@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  赛果回填闭环常驻:每 5 分钟跑 tools/backfill_results.py --once(幂等无害重跑)。
+  抓终比分 → record_result(upsert)→ 机械对错标台账 → 重跑跑分卡。
+  赛果抓取走中国住宅 IP 直连,本机无需代理;脚本经 __file__ 自锚仓库根,无需 WorkingDirectory。
+  上线(用户手动): cp 本文件到 ~/Library/LaunchAgents/ 后 launchctl load。
+-->
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.wc.backfill-results</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>/Users/heyining/Daniel/WorkSpace/fifa-world-cup-2026/tools/backfill_results.py</string>
+    <string>--once</string>
+  </array>
+  <key>StartInterval</key><integer>300</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardErrorPath</key><string>/tmp/wc-backfill-results.err</string>
+  <key>StandardOutPath</key><string>/tmp/wc-backfill-results.out</string>
+</dict></plist>
