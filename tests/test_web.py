@@ -1,12 +1,19 @@
 import os
 import tempfile
+from datetime import datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
 
 from backend.config import load_config
 from backend.db import Db
+from backend.state import BJ
 from backend.web import create_app
+
+
+def _ko_bj(dt):
+    """aware datetime → "M.D HH:MM"(backend.state.parse_ko_dt 可解析的开球格式)。"""
+    return f"{dt.month}.{dt.day} {dt.hour:02d}:{dt.minute:02d}"
 
 
 def _seed(db):
@@ -190,18 +197,37 @@ def test_ingest_predictions_accepts_and_skips(client):
 
 
 def test_get_decisions_sorted_and_shape(client):
-    """GET /api/decisions → {ts, decisions[]}; 按 ko_bj 升序, 缺末尾。"""
+    """GET /api/decisions → {ts, decisions[]}; 按 ko_bj 升序, 缺末尾。
+
+    开球时刻取相对 now 的未来值(始终 upcoming, 不被 -DECAY_H 滑窗过滤),
+    避免硬编码日期随墙钟过期 (见 backend.state.ko_status)。
+    """
     c, db = client
+    now = datetime.now(BJ)
     db.save_decisions([
         {"match_key": "无开球", "home_cn": "X", "away_cn": "Y"},
-        {"match_key": "晚场", "ko_bj": "6.27 09:00"},
-        {"match_key": "早场", "ko_bj": "6.27 02:00"},
+        {"match_key": "晚场", "ko_bj": _ko_bj(now + timedelta(hours=2))},
+        {"match_key": "早场", "ko_bj": _ko_bj(now + timedelta(hours=1))},
     ])
     r = c.get("/api/decisions")
     assert r.status_code == 200
     body = r.json()
     assert "ts" in body and isinstance(body["ts"], str)
     assert [d["match_key"] for d in body["decisions"]] == ["早场", "晚场", "无开球"]
+
+
+def test_get_decisions_filters_expired(client):
+    """开球已过 -DECAY_H 滑窗的场被滤掉, 未来场保留 (确定性锁住滑窗行为)。"""
+    c, db = client
+    now = datetime.now(BJ)
+    db.save_decisions([
+        {"match_key": "过期", "ko_bj": _ko_bj(now - timedelta(hours=12))},  # < now-6h → expired
+        {"match_key": "未来", "ko_bj": _ko_bj(now + timedelta(hours=1))},   # upcoming
+    ])
+    r = c.get("/api/decisions")
+    assert r.status_code == 200
+    keys = [d["match_key"] for d in r.json()["decisions"]]
+    assert keys == ["未来"]  # 过期场被滑窗滤掉
 
 
 def test_get_decisions_empty(tmp_path):
