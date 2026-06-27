@@ -26,21 +26,25 @@ flowchart TB
     DS -->|"save_intel.py 只挑确证事实"| ENRICH["wc.db · enrich 事实卡"]
     ODDS --> CACHE["odds_cache.db · 带时间戳"]
 
-    subgraph BRAINS["三脑 · 独立 subagent · v1 与 v2 互不可见"]
+    subgraph BRAINS["预测脑 · v1 与 v2 互不可见(⊥)"]
         V1["v1 比分脑"]
         V2["v2 概率脑"]
-        VAL["价值脑"]
     end
+    ODDS_A["wc-odds · 盘口描述"]
+    BET["wc-bet · 下注决策"]
 
     DS -.->|读原文| V1
-    DS -.->|读原文| VAL
+    DS -.->|陷阱盘/动机| ODDS_A
     ENRICH -->|"match_fact_card 事实卡"| V2
     CACHE -->|"baseline_market 基线"| V2
-    CACHE --> VAL
+    CACHE --> ODDS_A
+    ODDS_A -->|共识/去水/异动| BET
+    V1 --> BET
+    V2 --> BET
 
     V1 --> JOIN["跨库 join → Decision"]
     V2 --> JOIN
-    VAL --> JOIN
+    BET --> JOIN
     JOIN -->|"POST /api/ingest/predictions"| DASH["HK 看板 · 手机决策卡"]
 ```
 
@@ -56,7 +60,8 @@ flowchart TB
 |---|---|---|---|
 | **v1 比分** | `football-match-predictor` | 出线形势 + 比分(主-客) + 自评胜平负% | 不算价值/EV |
 | **v2 概率** | `wc-forecaster-v2` | 市场锚定胜平负概率 + 靠谱度(稳/中/乱) + 剧本标签 | 不出精确比分、不算 EV、不推下注 |
-| **价值** | `odds-value-analyst` | 竞彩×Poly去水 价值(🟢/🟡/🔴) + 最不亏的腿 + 结算机制 | 不预测比分/出线 |
+| **盘口描述** | `wc-odds` | 竞彩/Poly去水/欧盘共识三源、去水、市场共识、竞彩vs共识分歧、盘口异动、陷阱盘/结算结构 | 不下价值判断/不选腿 |
+| **下注决策** | `wc-bet` | 综合 v1/v2/共识/价值 → value(🟢/🟡/🔴)+ 最不亏的腿 + 评方案 + 讲结算 + 维护下注复盘 | 不取盘口(找wc-odds)/不预测比分/不进跑分卡 |
 
 ### 🔴 v1 ⊥ v2 红线（不可妥协）
 
