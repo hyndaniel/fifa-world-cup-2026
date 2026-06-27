@@ -121,10 +121,12 @@ CST = ET + 12/13。判断"今晚/明天/是否已开赛"**必须看 ET 当下**,
   ```
 - 产物含:逐盘口 baseline + 有据偏离(每条带 `factor_source`)、整场靠谱度(稳/中/乱)、剧本标签。
 
-**Pass 价值 = `odds-value-analyst`(green/yellow + 最不亏腿):**
-- 任务:对每场每选项算 value = 竞彩欧赔 × Poly去水(p_true),EV%,分档(🟢green≥1.03 / 🟡yellow0.97–1.03 /
-  🔴red<0.97明显-EV;⚪skip=陷阱桶/缺对应 Poly 线自动跳过),点出"最不亏"那条腿。它从 `.cache/odds_cache.db` 读 Poly(不自抓)。
-- 落盘:它自己维护 `reports/盘口下注复盘.md`。
+**Pass 价值 = 描述→决策两步(`wc-odds` → `wc-bet`):**
+- **先 `wc-odds`(描述层)**:取竞彩/Poly去水/欧盘共识三源,算去水隐含概率,报**市场共识**、**竞彩vs共识分歧**、**盘口异动**。从 `.cache/odds_cache.db` 读 Poly(不自抓)。**只描述、不判价值/不选腿**。
+- **再 `wc-bet`(决策层)**:接 wc-odds 的去水/共识 + v1/v2,算 value = 竞彩欧赔 × Poly去水(p_true)、EV%、分档
+  (🟢green≥1.03 / 🟡yellow0.97–1.03 / 🔴red<0.97明显-EV;⚪skip=陷阱桶/缺对应 Poly 线自动跳过),点出"最不亏"那条腿。
+- 落盘:`wc-bet` 维护 `reports/盘口下注复盘.md`。
+- 注:wc-odds/wc-bet 是下游(综合 v1/v2 的终点),不受 v1⊥v2 红线约束;红线只管 v1/v2 互不见。
 
 > 三条独立性的实现 = 三个独立 subagent 调用。派 v2 前**自检**:这份 prompt 里有没有任何
 > 来自 v1 的比分/概率/文字?有 → 删掉再派。
@@ -176,7 +178,7 @@ python3 tools/v2_report.py
    - `v1` 块取自 `get_v1('.cache/odds_cache.db', key)`(probs + score_pred);rationale 从 v1 这场依据摘一句。
    - `v2` 块取自 `get_v2_prediction('.cache/odds_cache.db', key)`:`probs` = had 的 `markets.had.v2`,
      `reliability` = `reliability`,`scenarios` = `scenarios`,`deviated` = had 有无 `deviations`。
-   - `value` 块取自 odds-value-analyst 这场的结论(verdict / best_leg / legs)。
+   - `value` 块取自 `wc-bet` 这场的决策结论(verdict / best_leg / legs);去水/共识数字源自 `wc-odds`。
    - `flag` ∈ {green, yellow, red, skip}(`value.py` 实产四档:≥1.03 green / 0.97–1.03 yellow /
      <0.97 red(明显-EV) / 陷阱桶 skip);**别把 red 折叠成 skip**——前端 🔴 单独显示,守诚实定位。
    - 缺哪块就**省略哪块**(别塞空壳),前端会显示"未出/—"。

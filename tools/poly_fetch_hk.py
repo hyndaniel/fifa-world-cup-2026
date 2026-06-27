@@ -22,7 +22,7 @@ aws-hk 是 Python 3.9 且 **没装 httpx、repo 也不在该机**, 所以 `fetch
   3. remote_exec: python3 /tmp/poly_fetch_hk.py fetch /tmp/matches.json /tmp/poly_ingest.json
   4. remote_download poly_ingest.json 回 Mac
   5. ingest(Mac)
-  6. 再派 odds-value-analyst 用新 Poly 重算(它从缓存读、不自抓)
+  6. 再派 wc-odds 用新 Poly 重算去水(它从缓存读、不自抓);价值/选腿由 wc-bet
 
 注意: odds_watch 的 diff_payload 只 diff had/hhad/ttg, 对 poly payload 永远报"0 变化"
 ——数据照常存, 旧→新 delta 需自己读缓存算。
