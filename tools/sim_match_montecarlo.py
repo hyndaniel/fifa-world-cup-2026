@@ -68,6 +68,8 @@ def resolve_config(input_json=None):
         if input_json == "-":
             input_json = sys.stdin.read()
         cfg = json.loads(input_json)
+        if not isinstance(cfg, dict):
+            raise ValueError("input 必须是 JSON 对象 {...}")
     cfg.setdefault("pen_home", 0.5)
     cfg.setdefault("home", "Home")
     cfg.setdefault("away", "Away")

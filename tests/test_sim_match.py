@@ -38,6 +38,13 @@ def test_1x2_must_sum_to_one():
         resolve_config(json.dumps({**_FULL, "p_home": 0.9}))   # 和≈1.4
 
 
+@pytest.mark.parametrize("bad", ["5", "[1,2]", "null", '"str"'])
+def test_non_object_json_raises_valueerror(bad):
+    # 合法 JSON 但顶层不是对象 → 走 ValueError 通道(让 main 干净退非0,而非 AttributeError traceback)
+    with pytest.raises(ValueError):
+        resolve_config(bad)
+
+
 def test_no_input_uses_config():
     c = resolve_config(None)                       # 走模块 CONFIG
     assert c["home"] and c["p_home"] is not None
