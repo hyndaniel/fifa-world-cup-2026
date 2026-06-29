@@ -53,6 +53,7 @@
   <nav class="tabs" id="tabs" role="tablist">
     <button class="tab-btn active" data-tab="decisions" role="tab">决策</button>
     <button class="tab-btn" data-tab="dashboard" role="tab">看板</button>
+    <button class="tab-btn" data-tab="stats" role="tab">战绩</button>
     <button class="tab-btn" data-tab="reports" role="tab">报告</button>
   </nav>
 
@@ -129,13 +130,16 @@
         </div>
       </section>
 
-      <!-- 下注统计 (推荐腿战绩 / 实购票盈亏) -->
+    </section>
+
+    <!-- ===== 战绩视图 (推荐腿战绩 / 按人榜 / 下注明细) ===== -->
+    <section id="view-stats" class="view" role="tabpanel">
       <section class="panel" id="panel-betstats">
         <div class="panel-head">
           <span class="eyebrow">stats · 下注统计</span>
           <h2 class="panel-h">战绩 · 盈亏 · 不自欺</h2>
         </div>
-        <p class="panel-sub">推荐腿命中率与实购票真实盈亏 · 数据源自 wc-bet 台账</p>
+        <p class="panel-sub">推荐腿命中率 · 按人真实盈亏 · 全部票逐行 · 数据源自 wc-bet 台账</p>
 
         <!-- 推荐腿战绩 -->
         <div class="bs-block" id="bs-recs">
@@ -149,9 +153,16 @@
           <div class="bs-hypo" id="bs-hypo"></div>
         </div>
 
-        <!-- 实购票盈亏 -->
+        <!-- 按人战绩榜 -->
+        <div class="bs-block" id="bs-people">
+          <div class="bs-block-h">按人战绩榜 <span class="bs-sub" id="bs-people-sub">—</span></div>
+          <div class="bs-person-list" id="bs-person-list"></div>
+          <div class="bs-honest" id="bs-honest"></div>
+        </div>
+
+        <!-- 下注明细表 -->
         <div class="bs-block" id="bs-tickets">
-          <div class="bs-block-h">实购票盈亏 <span class="bs-sub" id="bs-tix-sub">—</span></div>
+          <div class="bs-block-h">下注明细表 <span class="bs-sub" id="bs-tix-sub">—</span></div>
           <div class="ticket-table" id="bs-ticket-table"></div>
           <div class="bs-tix-total" id="bs-tix-total"></div>
           <div class="bs-foot">足彩长期 -EV;此处真金白银全归零,非投资建议。</div>

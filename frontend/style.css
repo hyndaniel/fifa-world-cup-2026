@@ -1216,7 +1216,37 @@ html[data-theme="amber"] {
 .tk-c3, .tk-c5 { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
 .tk-c.pos { color: var(--edge); }
 .tk-c.neg { color: var(--bleed); }
-.bs-tix-total { display: flex; gap: 14px; margin-top: 8px; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.tk-c5.tk-pending { color: var(--bone-faint); font-weight: 400; }
+.bs-tix-total { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.bs-tot-line { display: flex; gap: 14px; align-items: baseline; flex-wrap: wrap; }
+.bs-tot-pend-line { color: var(--bone-dim); font-size: 0.85em; }
 .bs-tot-k { color: var(--bone-dim); }
 .bs-tot-pnl.neg, .bs-tot-roi.neg { color: var(--bleed); font-weight: 600; }
+.bs-tot-pnl.pos, .bs-tot-roi.pos { color: var(--edge); font-weight: 600; }
+.bs-tot-pending { color: var(--fair); }
 .bs-foot { color: var(--bone-dim); font-size: 0.74rem; margin-top: 8px; }
+
+/* ===== 按人战绩榜 (行式, 随人数自动扩) ===== */
+.bs-person-list { display: flex; flex-direction: column; margin-top: 4px; }
+.bs-person-row {
+  display: grid;
+  grid-template-columns: 0.9fr 1.1fr 0.55fr 0.7fr 0.85fr 0.75fr 1.1fr;
+  gap: 8px; align-items: center;
+  padding: 5px 0; border-bottom: 1px solid var(--frame-soft);
+  font-size: 0.82rem;
+}
+.bsp-name { font-weight: 600; color: var(--bone); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bsp-cnt { color: var(--bone-dim); white-space: nowrap; }
+.bsp-cnt-n { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.bsp-pending { color: var(--fair); font-size: 0.85em; margin-left: 1px; }
+.bsp-won { color: var(--bone-dim); font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
+.bsp-stake { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; color: var(--bone-dim); }
+.bsp-pnl, .bsp-roi { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
+.bsp-pnl.pos, .bsp-roi.pos { color: var(--edge); }
+.bsp-pnl.neg, .bsp-roi.neg { color: var(--bleed); }
+.bs-bar { display: block; height: 7px; border-radius: 4px; background: var(--ink-3); border: 1px solid var(--frame-soft); overflow: hidden; }
+.bs-bar-fill { display: block; height: 100%; min-width: 2px; background: var(--bone-faint); border-radius: 4px; }
+.bs-bar-fill.pos { background: var(--edge); }
+.bs-bar-fill.neg { background: var(--bleed); }
+.bs-person-row.bsp-pending-only { opacity: 0.72; }
+.bs-honest { color: var(--fair); font-size: 0.78rem; margin-top: 8px; line-height: 1.45; }

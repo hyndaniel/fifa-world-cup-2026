@@ -852,9 +852,55 @@ function renderBetStats(s) {
       "非真钱;正收益是高赔腿方差兑现,全部腿赛前皆 -EV、不可复制"));
   }
 
-  // — 实购票盈亏 —
+  // — 按人战绩榜 (行式, 随人数自动扩) —
+  const persons = tix.by_person || [];
+  const psub = $("#bs-people-sub");
+  if (psub) psub.textContent = `${persons.length} 人 · 共 ${tix.count || 0} 张 · ${tix.won || 0} 中`;
+  const plist = $("#bs-person-list");
+  if (plist) {
+    plist.innerHTML = "";
+    const maxStake = persons.reduce((m, p) => Math.max(m, Number(p.settled_stake) || 0), 0) || 1;
+    for (const p of persons) {
+      const settledN = p.settled || 0;
+      const pendingN = p.pending || 0;
+      const pnl = Number(p.settled_pnl) || 0;
+      const cls = pnl > 0 ? "pos" : pnl < 0 ? "neg" : "";
+      const row = el("div", "bs-person-row" + (settledN === 0 && pendingN > 0 ? " bsp-pending-only" : ""));
+
+      row.appendChild(el("span", "bsp-name", p.who || ""));
+
+      const cnt = el("span", "bsp-cnt");
+      cnt.appendChild(el("span", "bsp-cnt-n", `${p.tickets || 0}张`));
+      if (pendingN > 0) cnt.appendChild(el("span", "bsp-pending", `·${pendingN}待结`));
+      row.appendChild(cnt);
+
+      row.appendChild(el("span", "bsp-won", `中${p.won || 0}`));
+      row.appendChild(el("span", "bsp-stake", fmtNum(p.settled_stake)));
+      row.appendChild(el("span", "bsp-pnl " + cls,
+        `${pnl > 0 ? "+" : ""}${fmtNum(p.settled_pnl)}`));
+      row.appendChild(el("span", "bsp-roi " + cls, fmtSignedPct((p.settled_roi || 0) * 100)));
+
+      const barWrap = el("span", "bs-bar");
+      const fill = el("span", "bs-bar-fill " + cls);
+      fill.style.width = Math.round(((Number(p.settled_stake) || 0) / maxStake) * 100) + "%";
+      barWrap.appendChild(fill);
+      row.appendChild(barWrap);
+
+      plist.appendChild(row);
+    }
+  }
+  // 诚实行: 数字从 settled_pnl 实算 (不写死), 方差非 edge
+  const honest = $("#bs-honest");
+  if (honest) {
+    const sp = Number(tix.settled_pnl) || 0;
+    honest.textContent =
+      `整组已结 ${sp >= 0 ? "+" : ""}${fmtNum(sp)},全靠『你』ME11 与 LYZ 两笔高赔命中扛起;命中≠edge、高方差不可复制`;
+  }
+
+  // — 下注明细表 (全部票, 待结显示「待结」) —
   const tsub = $("#bs-tix-sub");
-  if (tsub) tsub.textContent = `${tix.count || 0} 张 · ${tix.won || 0} 中`;
+  if (tsub) tsub.textContent =
+    `${tix.count || 0} 张 · ${tix.settled_count || 0} 已结 · ${tix.pending_count || 0} 待结 · ${tix.won || 0} 中`;
   const tbl = $("#bs-ticket-table");
   if (tbl) {
     tbl.innerHTML = "";
@@ -869,7 +915,14 @@ function renderBetStats(s) {
       row.appendChild(el("span", "tk-c tk-c2", r.type || ""));
       row.appendChild(el("span", "tk-c tk-c3", fmtNum(r.stake)));
       row.appendChild(el("span", "tk-c tk-c4", r.legs_hit || ""));
-      const pnlEl = el("span", "tk-c tk-c5 " + (r.pnl < 0 ? "neg" : r.pnl > 0 ? "pos" : ""), fmtNum(r.pnl));
+      const pending = r.settled === false || r.pnl == null;
+      let pnlEl;
+      if (pending) {
+        pnlEl = el("span", "tk-c tk-c5 tk-pending", "待结");
+      } else {
+        pnlEl = el("span", "tk-c tk-c5 " + (r.pnl < 0 ? "neg" : r.pnl > 0 ? "pos" : ""),
+          `${r.pnl > 0 ? "+" : ""}${fmtNum(r.pnl)}`);
+      }
       row.appendChild(pnlEl);
       tbl.appendChild(row);
     }
@@ -877,10 +930,22 @@ function renderBetStats(s) {
   const tot = $("#bs-tix-total");
   if (tot) {
     tot.innerHTML = "";
-    tot.appendChild(el("span", "bs-tot-k", "合计"));
-    tot.appendChild(el("span", "bs-tot-stake", `投 ${fmtNum(tix.total_stake)}`));
-    tot.appendChild(el("span", "bs-tot-pnl neg", `盈亏 ${fmtNum(tix.total_pnl)}`));
-    tot.appendChild(el("span", "bs-tot-roi neg", `ROI ${fmtSignedPct((tix.roi || 0) * 100)}`));
+    // 已结合计
+    const sp = Number(tix.settled_pnl) || 0;
+    const spCls = sp > 0 ? "pos" : sp < 0 ? "neg" : "";
+    const settledLine = el("div", "bs-tot-line");
+    settledLine.appendChild(el("span", "bs-tot-k", "已结合计"));
+    settledLine.appendChild(el("span", "bs-tot-stake", `投 ${fmtNum(tix.settled_stake)}`));
+    settledLine.appendChild(el("span", "bs-tot-pnl " + spCls,
+      `盈亏 ${sp > 0 ? "+" : ""}${fmtNum(tix.settled_pnl)}`));
+    settledLine.appendChild(el("span", "bs-tot-roi " + spCls,
+      `ROI ${fmtSignedPct((tix.settled_roi || 0) * 100)}`));
+    tot.appendChild(settledLine);
+    // 待结投注 (单列, 不计盈亏)
+    const pendLine = el("div", "bs-tot-line bs-tot-pend-line");
+    pendLine.appendChild(el("span", "bs-tot-k", "待结投注"));
+    pendLine.appendChild(el("span", "bs-tot-pending", fmtNum(tix.pending_stake)));
+    tot.appendChild(pendLine);
   }
 }
 
@@ -993,7 +1058,7 @@ async function openReport(name) {
 }
 
 // ================= tab 切换 (支持 #hash 深链, 可收藏/分享某一页) =================
-const TABS = ["decisions", "dashboard", "reports"];
+const TABS = ["decisions", "dashboard", "stats", "reports"];
 function activateTab(tab, updateHash) {
   if (!TABS.includes(tab)) tab = "decisions";
   $$(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
@@ -1005,7 +1070,7 @@ function activateTab(tab, updateHash) {
   }
   if (tab === "reports") loadReportsList();
   if (tab === "decisions") loadDecisions();
-  if (tab === "dashboard") loadBetStats();
+  if (tab === "stats") loadBetStats();
 }
 function setupTabs() {
   $$(".tab-btn").forEach((btn) => {
