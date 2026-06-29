@@ -23,7 +23,9 @@
     <key>WC_INGEST_PW</key><string>__看板密码__</string>
     <key>WC_HTTPS_PROXY</key><string>http://127.0.0.1:7897</string>
   </dict>
-  <key>StartInterval</key><integer>300</integer>
+  <!-- 间隔取 1800(30min)与实机现状一致:刷三源对 HK/7897代理/Poly 的负载较低。
+       design 原意是 300(5min);如需高频改回 300。模板对齐实机=照模板重装不会意外把频率 ×6。 -->
+  <key>StartInterval</key><integer>1800</integer>
   <key>RunAtLoad</key><true/>
   <key>StandardErrorPath</key><string>/tmp/wc-refresh-all.err</string>
   <key>StandardOutPath</key><string>/tmp/wc-refresh-all.out</string>

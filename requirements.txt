@@ -1,5 +1,8 @@
 fastapi==0.115.*
 uvicorn[standard]==0.32.*
-httpx[socks]==0.27.*
+# httpx[socks]: sporttery/polymarket/news_enrich 抓取 + sporttery socks5 WAF 旁路([zucai] proxy 用)。
+# 对齐实机实装 0.28.1(repo 用 proxy= 单值 API,0.27→0.28 无破坏;0.28 仅移除已弃用的 proxies= dict,本仓未用)。
+# 实机 launchd 解释器须装 [socks] extra(socksio),否则配 socks5 代理时会 ImportError。
+httpx[socks]==0.28.*
 tomli==2.*; python_version < "3.11"
 pytest==8.*
