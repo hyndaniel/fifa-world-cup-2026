@@ -31,6 +31,7 @@ from backend import sporttery  # noqa: E402
 PROXY = os.environ.get("WC_HTTPS_PROXY", "http://127.0.0.1:7897")
 INGEST = os.environ.get("WC_INGEST_URL", "http://18.166.71.60:8000").rstrip("/")
 PW = os.environ.get("WC_INGEST_PW", "")
+PW_PLACEHOLDER = "__看板密码__"  # plist 模板占位符;没换=误配,鉴权头会带错密码/缺失
 USER = os.environ.get("WC_INGEST_USER", "admin")
 
 
@@ -209,10 +210,25 @@ def run_once(dry_run=False):
     # 4) 推 HK
     if dry_run:
         print("  --dry-run: 不推 HK")
-        return
-    r1 = _post("/api/ingest/zucai", raw_env) if raw_env else None
+        return 0
+    # 配置兜底:密码空或没换占位符 → HK 若开鉴权必 401。打 stderr 提醒,但不据此直接判失败
+    # (HK 可关鉴权,空 PW 合法)——真正的失败信号以"POST 是否推成"为准,见下。
+    if PW in ("", PW_PLACEHOLDER):
+        sys.stderr.write(
+            "  [warn] WC_INGEST_PW 未配置(空或占位符 __看板密码__)→ 鉴权头缺失,HK 若开鉴权将 401\n")
+    attempted, ok = 0, 0
+    r1 = None
+    if raw_env:
+        attempted += 1
+        r1 = _post("/api/ingest/zucai", raw_env)
+        ok += r1 is not None
+    attempted += 1
     r2 = _post("/api/ingest/odds", {"items": panel})
+    ok += r2 is not None
     print(f"  推送: zucai={r1} odds={r2}")
+    # error-contract(§7.2):--once 下若所有尝试的 POST 全失败(全 None,如 HK 宕/401)→ 退非零,
+    # 别让 launchd 把"一条都没推成"记成退出码 0 的健康轮。loop 模式忽略返回值、不杀循环(下轮自愈)。
+    return 0 if ok > 0 else 1
 
 
 if __name__ == "__main__":
@@ -230,4 +246,5 @@ if __name__ == "__main__":
                 sys.stderr.write(f"  [warn] run_once 异常, 跳过本轮: {e!r}\n")
             time.sleep(a.loop)
     else:
-        run_once(a.dry_run)
+        # --once(或缺省单跑):把推送结果当退出码,失败暴露给 launchd(见 run_once error-contract)。
+        raise SystemExit(run_once(a.dry_run))

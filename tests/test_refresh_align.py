@@ -127,3 +127,38 @@ def test_build_panel_poly_aligned_by_match_key():
     p = ra.build_panel(zucai, [], poly, prev_lookup=lambda s, k: None)[0]
     assert p["sources"]["poly"]["stale"] is False
     assert p["sources"]["poly"]["devig"]["h"] == 30.0
+
+
+def _stub_fetches(monkeypatch):
+    """把 run_once 的抓取/缓存层全 stub 成空(不打真网、不碰真 db),只验推送→退出码。"""
+    class _Conn:
+        def commit(self):
+            pass
+    monkeypatch.setattr(ra.sporttery, "fetch", lambda *a, **k: {"raw": 1})  # raw_env truthy
+    monkeypatch.setattr(ra.ow, "fetch_zucai", lambda *a, **k: [])
+    monkeypatch.setattr(ra.ow, "fetch_consensus", lambda *a, **k: [])
+    monkeypatch.setattr(ra, "_fetch_poly_local", lambda *a, **k: [])
+    monkeypatch.setattr(ra.ow, "connect", lambda *a, **k: _Conn())
+    monkeypatch.setattr(ra.ow, "save", lambda *a, **k: None)
+    monkeypatch.setattr(ra.ow, "latest", lambda *a, **k: None)
+
+
+def test_run_once_returns_1_when_all_posts_fail(monkeypatch):
+    # error-contract:两次 POST 全失败(_post→None)→ run_once 返 1,别让 launchd 记成健康。
+    _stub_fetches(monkeypatch)
+    monkeypatch.setattr(ra, "_post", lambda path, body: None)
+    assert ra.run_once(dry_run=False) == 1
+
+
+def test_run_once_returns_0_when_a_post_succeeds(monkeypatch):
+    # 至少一条推成(返 dict)→ 0(部分成功不判失败)。
+    _stub_fetches(monkeypatch)
+    monkeypatch.setattr(ra, "_post", lambda path, body: {"ok": True})
+    assert ra.run_once(dry_run=False) == 0
+
+
+def test_run_once_dry_run_returns_0(monkeypatch):
+    # dry-run 不推 HK → 恒 0(冒烟不应判失败)。
+    _stub_fetches(monkeypatch)
+    monkeypatch.setattr(ra, "_post", lambda path, body: None)  # 即便会失败,dry-run 也不触达
+    assert ra.run_once(dry_run=True) == 0
