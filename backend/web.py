@@ -1,13 +1,14 @@
 """FastAPI 应用: /api/* + 静态前端挂载。
 
 create_app(db_path=..., cfg=None, reports_dir="reports", frontend_dir="frontend",
-           require_auth=None) -> FastAPI
+           data_dir="data", require_auth=None) -> FastAPI
 
 路由:
 - GET    /api/state            → backend.state.build_state(db, cfg, now=北京时间)
 - GET    /api/reports          → backend.reports.list_reports()  (列表)
 - GET    /api/reports/{name}   → backend.reports.read_report()   ({name,title,content})
 - POST   /api/bets             → db.add_bet(wallet, legs, stake, odds, note)
+- GET    /api/bets/summary     → backend.bet_stats.build_summary(load_ledger(data_dir))
 - GET    /api/watchlist        → db.watchlist()
 - POST   /api/watchlist        → db.add_watch(kind, key, note)
 - DELETE /api/watchlist/{id}   → db.del_watch(id)

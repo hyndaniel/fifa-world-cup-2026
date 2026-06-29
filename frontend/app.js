@@ -832,7 +832,7 @@ function renderBetStats(s) {
     bd.innerHTML = "";
     for (const d of recs.by_date || []) {
       const row = el("div", "bs-date-row");
-      row.appendChild(el("span", "bs-date-k", d.date.slice(5)));
+      row.appendChild(el("span", "bs-date-k", (d.date || "").slice(5)));
       row.appendChild(el("span", "bs-date-v", `${d.win}/${d.settled}`));
       bd.appendChild(row);
     }
