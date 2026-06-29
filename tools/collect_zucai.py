@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""住宅端足彩采集器: 从本机(住宅 IP, 足彩可直连)拉 getMatchCalculatorV1,
+"""【已退役 2026-06-29】被 tools/refresh_all.py 取代(它一并刷三源 + 推竞彩 raw)。
+运行时已不加载(launchctl 无 com.wc.collect-zucai);保留本文件仅作 poolCode 请求模式 /
+basic-auth POST 风格的参考(collect_enrich.py、SKILL.md 仍引为模板)。新代码勿再用它。
+
+住宅端足彩采集器: 从本机(住宅 IP, 足彩可直连)拉 getMatchCalculatorV1,
 POST 到 HK 看板 /api/ingest/zucai。HK 机房被足彩 EdgeOne WAF 拦(数据中心 IP + JA3),
 故由住宅中转 —— 从该能正常访问的入口取数, 不涉及任何 WAF 绕过。纯标准库。
 

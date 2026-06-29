@@ -2,8 +2,9 @@
 写 enrich 表 (与 Mac 端 tools/collect_enrich.py 同效, 但跑在 app 内)。
 
 为何在 app 内 / HK 端: Google News 在大陆被墙, Mac 住宅 IP 直连超时, 故新闻必须
-在 HK 机房抓 (HK 无 GFW, 直连 200)。足彩仍由 Mac 住宅端 collect_zucai 推送
-(机房 IP 被足彩 WAF 拦)。两条数据链路按"哪边能连"分置。
+在 HK 机房抓 (HK 无 GFW, 直连 200)。足彩仍由 Mac 住宅端推送
+(现为 tools/refresh_all.py, 取代旧 collect_zucai;机房 IP 被足彩 WAF 拦)。
+两条数据链路按"哪边能连"分置。
 
 lineup(首发) 暂无免费可靠源, 恒为 None(未出炉), 不影响新闻。
 fetch 可注入便于测试 (默认 httpx 直连 Google News RSS)。

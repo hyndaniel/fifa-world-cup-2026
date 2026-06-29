@@ -36,3 +36,17 @@ def test_manifest_file_not_listed_as_report(tmp_path):
     (tmp_path / "report_times.json").write_text("{}", encoding="utf-8")
     names = [r["name"] for r in list_reports(str(tmp_path))]
     assert names == ["r"]
+
+
+def test_subdir_md_excluded_from_list(tmp_path):
+    """_archive/ _state/ 子目录里的 .md 不进看板列表(glob('*.md') 非递归)。
+
+    锚住 §3.1 报告迁移的物理前提:把死报告 git mv 进 reports/_archive/ 即从 /reports 列表消失。
+    """
+    (tmp_path / "live.md").write_text("# LIVE\n", encoding="utf-8")
+    (tmp_path / "_archive").mkdir()
+    (tmp_path / "_archive" / "dead.md").write_text("# DEAD\n", encoding="utf-8")
+    (tmp_path / "_state").mkdir()
+    (tmp_path / "_state" / "note.md").write_text("# NOTE\n", encoding="utf-8")
+    names = [r["name"] for r in list_reports(str(tmp_path))]
+    assert names == ["live"]  # 仅根 .md;子目录内的 dead/note 被排除
