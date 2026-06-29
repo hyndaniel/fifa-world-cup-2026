@@ -10,6 +10,8 @@
 口径(诚实声明):
   λ 由**市场赔率**反解,不是独立训练的 xG 引擎 → 这是「市场一致的模拟」,
   不是独立神谕。比分分布的形状(DC ρ 调低比分)是模型假设,非实测。
+  ⚠️ Brier 红线: 本工具市场锚定、与 v2 同锚,非独立信号 —— 输出只供 wc-bet 决策内部用
+     (比分网格/热力图/晋级%), 永不当 v1/v2 式预测、永不进 Brier 跑分卡。
 
 纯 stdlib(math 即可),无 numpy 依赖 → 任何机器/worktree 都能跑。
 
@@ -17,6 +19,8 @@
   改下面 CONFIG 里的 match / 目标概率(从 wc-odds 的去水数字填),然后:
     python3 tools/sim_match_montecarlo.py
   会打印完整报告;加 --json <path> 另存比分网格 JSON。
+  编排化(wc-bet 用): python3 tools/sim_match_montecarlo.py --input '<json>' --json <path>
+    input JSON: {match,home,away,p_home,p_draw,p_away,ou_line,p_over,pen_home?}; pen_home 默认 0.5
   注:导出的网格用**字符串键** "i-j": prob(非元组键),供仓外 handicap/净胜球分析
   自行把键拆回 (i,j) 用;它**不是**项目 .cache/_grid.pkl 的元组键 pickle 同构体。
 """
@@ -48,6 +52,35 @@ CONFIG = {
 MAXGOALS = 10          # 0..10 球,P(>10) ≈ 0
 ET_SCALE = 30.0 / 90.0 # 加时 30 分钟 ≈ 联赛进球率的 1/3
 # ===============================================================
+
+REQUIRED = ("p_home", "p_draw", "p_away", "ou_line", "p_over")
+
+
+def resolve_config(input_json=None):
+    """返回校验过的配置 dict。
+
+    input_json 为 JSON 字符串时覆盖 CONFIG('-' 从 stdin 读);为 None 走模块 CONFIG。
+    补 pen_home 默认 0.5;校验必填字段与 1X2 和≈1。失败 raise ValueError/JSONDecodeError。
+    """
+    if input_json is None:
+        cfg = dict(CONFIG)
+    else:
+        if input_json == "-":
+            input_json = sys.stdin.read()
+        cfg = json.loads(input_json)
+        if not isinstance(cfg, dict):
+            raise ValueError("input 必须是 JSON 对象 {...}")
+    cfg.setdefault("pen_home", 0.5)
+    cfg.setdefault("home", "Home")
+    cfg.setdefault("away", "Away")
+    cfg.setdefault("match", f"{cfg['home']} vs {cfg['away']}")
+    missing = [k for k in REQUIRED if cfg.get(k) is None]
+    if missing:
+        raise ValueError(f"缺必填字段: {', '.join(missing)}(去水概率请从 wc-odds 取)")
+    s = cfg["p_home"] + cfg["p_draw"] + cfg["p_away"]
+    if abs(s - 1.0) > 0.05:
+        raise ValueError(f"p_home+p_draw+p_away={s:.3f} 偏离 1 太多(应去水后≈1)")
+    return cfg
 
 
 def poisson_pmf(k, lam):
@@ -149,7 +182,7 @@ def fit(tgt, line):
     return best  # (loss, λ_home, λ_away, ρ)
 
 
-def advance_prob(l1, l2):
+def advance_prob(l1, l2, pen_home):
     """90分钟平局后:加时(λ/3)→仍平则点球。返回主队晋级的条件概率。"""
     et = build_grid(l1 * ET_SCALE, l2 * ET_SCALE, 0.0)
     et_home = et_draw = et_away = 0.0
@@ -160,7 +193,7 @@ def advance_prob(l1, l2):
             et_draw += p
         else:
             et_away += p
-    pen = CONFIG["pen_home"]
+    pen = pen_home
     # 给定 90' 平:主队晋级 = 加时赢 + 加时平*点球赢
     p_home_adv_given_draw = et_home + et_draw * pen
     return p_home_adv_given_draw, {
@@ -173,20 +206,22 @@ def main():
         description="比赛模拟 · 市场锚定二元泊松+Dixon-Coles(改 CONFIG 切换场次)")
     ap.add_argument("--json", metavar="PATH",
                     help="另存比分网格 JSON(字符串键 'i-j': prob)")
+    ap.add_argument("--input", metavar="JSON",
+                    help="JSON 配置覆盖 CONFIG('-' 从 stdin 读);供 wc-bet 编排化调用")
     args = ap.parse_args()
 
-    c = CONFIG
-    line = c["ou_line"]
-    if c["p_home"] is None:
-        print("✗ CONFIG 里的去水概率还没填(p_home/p_draw/p_away/p_over)。先跑 wc-odds 取数。",
-              file=sys.stderr)
+    try:
+        c = resolve_config(args.input)
+    except (ValueError, json.JSONDecodeError) as e:
+        print(f"✗ 输入无效: {e}", file=sys.stderr)
         return 2
+    line = c["ou_line"]
     tgt = {"p_home": c["p_home"], "p_draw": c["p_draw"], "p_over": c["p_over"]}
     lv, l1, l2, rho = fit(tgt, line)
     grid = build_grid(l1, l2, rho)
     s = summarize(grid, line)
 
-    p_adv_given_draw, et = advance_prob(l1, l2)
+    p_adv_given_draw, et = advance_prob(l1, l2, c["pen_home"])
     adv_home = s["p_home"] + s["p_draw"] * p_adv_given_draw
     adv_away = 1 - adv_home
 
