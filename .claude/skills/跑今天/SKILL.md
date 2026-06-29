@@ -1,12 +1,13 @@
 ---
 name: 跑今天
-description: 世界杯每日预测一键编排。用户说「跑今天」「跑一下今天」「今天预测」「/跑今天」即用。按 ET 当下时刻判定该预测哪几场 → 并行派三条独立 pass(v1 比分 / v2 概率 / 价值)→ 跑 Brier 跑分卡 → 跨两库 join 成决策对象 → 写回 HK 看板。死守 v1⊥v2 红线(派 wc-prob-v2 时其上下文绝不含任何 v1 输出)。做掉每日 routine ~80%,赛前~1h 首发微调窗仍需临场再触发一次。
+description: 世界杯每日预测一键编排。用户说「跑今天」「跑一下今天」「今天预测」「/跑今天」即用。按 ET 当下时刻判定该预测哪几场 → 经 wc-predict-fanout workflow 并行派三条独立 pass(v1 比分 / v2 概率 / 价值,红线由脚本结构焊死)→ 跑 Brier 跑分卡 → 跨两库 join 成决策对象 → 写回 HK 看板。死守 v1⊥v2 红线(派 wc-prob-v2 时其上下文绝不含任何 v1 输出)。做掉每日 routine ~80%,赛前~1h 首发微调窗仍需临场再触发一次。
 ---
 
 # 跑今天 —— 每日预测一键编排
 
 替代「每天找 Claude 聊一长串」的日常仪式。**你(主会话)是编排者,本身不重写任何预测逻辑**——
-只调度三个已有 agent + 已有脚本,把散落各处的预测/概率/价值收口成看板「每场决策卡」。
+scout(判场+刷盘口+预计算 v2 输入)后调 `wc-predict-fanout` workflow 派三个已有 agent,再 glue
+(跑分卡+join+POST),把散落各处的预测/概率/价值收口成看板「每场决策卡」。红线焊在脚本结构里(第 3 步)。
 
 本仓库根 = worktree 根(`config.toml`、`tools/`、`reports/`、`backend/`、`.cache/` 都在此)。
 所有命令用仓库根的相对/绝对路径跑;Bash 调用间 cwd 会重置,必要时先 `cd` 到仓库根。
@@ -27,8 +28,11 @@ v1 / v2 / 市场基线谁更准。这套对照**只有在 v1 和 v2 各自独立
 才成立。一旦 v2 看过 v1 的比分再"预测",两者就相关了,Brier 对照立刻失效、再也分不清
 v2 的 market-anchored 方法到底有没有用。**这条红线护的是整套评估的有效性,不能为省事破。**
 
-**实现保证:** v1 与 v2 作为**两个各自独立的 subagent 调用**派出(各开各的上下文)。
-不要在同一个 prompt 里同时给两边、也不要把 v1 跑完的结果"顺手"塞进 v2 的派单。
+**实现保证(已升级为代码结构焊死,不再靠自觉):** 第 3 步由 `.claude/workflows/wc-predict-fanout.js`
+这个**确定性 Workflow 脚本**编排。脚本里 v1 与 v2 是同一个 `parallel()` 里**两个各自独立的 `agent()`
+调用**,且 `v2Prompt(m)` 是入参的**纯函数**——只读预计算好的 baseline + 事实卡,源里没有任何 v1 字段
+可引用。所以"派 v2 时上下文零 v1 输出"是**脚本结构的物理保证**,不是主会话"记得不要泄漏"。
+(脚本已 dry-run 验证:v2 prompt 含锚+事实卡、绝不含 v1 sentinel。)
 
 **注意区分:** 这条红线只管「**预测时刻**别互看」。第 5 步把 v1/v2 并排塞进同一张决策卡、
 前端并排展示——**不违红线**(那是"查看时并排",预测早已各自独立产出完毕)。
@@ -87,49 +91,76 @@ CST = ET + 12/13。判断"今晚/明天/是否已开赛"**必须看 ET 当下**,
    - (可复用步骤见项目记忆 [Poly refresh recipe])
 4. 取不到/缺位就**明说哪源缺**,不拿陈旧/缺失硬算。Poly 缺 → v2/价值的相关结论降靠谱度并标注。
 
-### 第 3 步 · 并行派三条独立 pass(死守 v1⊥v2 红线)
+### 第 3 步 · 调用 `wc-predict-fanout` workflow(🔴红线由脚本结构焊死)
 
-对第 1 步选出的每一场,派出三个**各自独立**的 subagent。三条互不共享上下文。
+**本步已从「主会话自觉派三个 subagent」升级为「确定性 Workflow 脚本」**(设计 §2 决策2:骨架=确定性
+Workflow,红线写进代码结构、不靠 agent「记得」)。脚本:`.claude/workflows/wc-predict-fanout.js`。
 
-**Pass v1 = `wc-score-v1`(比分 + 出线):**
-- 任务:出线形势 + 比分(主-客顺序)+ 自评胜平负 % + 一句出线诉求/依据。
-- 落盘:写回 `reports/小组赛比分预测.md`(它自己维护体例),并把概率+比分记进 v1 库:
+你(主会话)在本步只做两件事:**① 预计算每场 v2 的唯一合法输入 → ② 调 Workflow**。三条独立 pass
+的派单、红线隔离、自落库全在脚本里完成。
+
+#### 3a. 先预计算每场 v2 的**唯一合法输入**(baseline + factCard)
+
+这步是红线的**物理前提**:把 v2 的输入锁死成「与 v1 无关的市场数据 + 中立事实卡」,传进 workflow
+后 v2 的 prompt 结构上就只可能含这两样。对第 1 步选出的每一场跑(用其 `<match_key>`):
+
+- 逐盘口市场基线(had / hhad / ttg):
   ```
-  python3 -c "from backend.v1_log import record_v1; record_v1('.cache/odds_cache.db', '<match_key>', {'h':30,'d':30,'a':40}, '0-1')"
+  python3 -c "from backend.baseline import baseline_market, HAD_CFG, HHAD_CFG, TTG_CFG; print('HAD::', baseline_market('.cache/odds_cache.db','<match_key>',HAD_CFG)); print('HHAD::', baseline_market('.cache/odds_cache.db','<match_key>',HHAD_CFG)); print('TTG::', baseline_market('.cache/odds_cache.db','<match_key>',TTG_CFG))"
   ```
-  (probs 为胜平负 %,score_pred 为主-客比分串。)
-- 它**可以**看盘口/首发/出线——这些是它自己的三层叠加输入,不受红线限制。
-
-**Pass v2 = `wc-prob-v2`(market-anchored 概率)—— 🔴上下文只含基线+事实卡:**
-- 给它的派单**只准**含:
-  1. 逐盘口基线(它自己会跑,你也可预取塞进派单,数据同源):
-     ```
-     python3 -c "from backend.baseline import baseline_market, HAD_CFG, HHAD_CFG, TTG_CFG; print(baseline_market('.cache/odds_cache.db','<match_key>',HAD_CFG)); print(baseline_market('.cache/odds_cache.db','<match_key>',HHAD_CFG)); print(baseline_market('.cache/odds_cache.db','<match_key>',TTG_CFG))"
-     ```
-  2. 中立事实卡(确证新闻,恒无首发)。**match_key 即竞彩 `zucai_num`(形如 `周四055`),
-     odds_cache 与 wc.db 同键。直接传 match_key 即可——它经 `db.match(zucai_num)` 查 `data/wc.db`:**
-     ```
-     python3 -c "from backend.db import Db; from backend.intel import match_fact_card; from datetime import datetime, timezone, timedelta; print(match_fact_card(Db('data/wc.db'), '<match_key>', datetime.now(timezone(timedelta(hours=8)))))"
-     ```
-     (事实来自 enrich 表,两条入口:① watchlist 覆盖队的 `tools/collect_enrich.py` 推 Google-News
-     新闻到 HK;② deep-search 确证事实经 `tools/save_intel.py`(`--db` 指主 checkout 的 `data/wc.db`、
-     `--json` 为抽取后的 `{team_cn:[facts]}`)写进 enrich。v2 两者都经 `match_fact_card` 读,stale 阈值 48h。)
-- **绝不**把 v1 的 score/probs/依据放进这个派单。
-- v2 落库(它自己跑 build_v2_prediction → record_v2_prediction):
+- 中立事实卡(确证新闻,恒无首发;来源 = enrich 表,经 `collect_enrich.py` 与 `save_intel.py`
+  两入口,stale 阈值 48h):
   ```
-  record_v2_prediction('.cache/odds_cache.db', '<match_key>', <build_v2_prediction 产物>)
+  python3 -c "from backend.db import Db; from backend.intel import match_fact_card; from datetime import datetime, timezone, timedelta; print(match_fact_card(Db('data/wc.db'), '<match_key>', datetime.now(timezone(timedelta(hours=8)))))"
   ```
-- 产物含:逐盘口 baseline + 有据偏离(每条带 `factor_source`)、整场靠谱度(稳/中/乱)、剧本标签。
 
-**Pass 价值 = 描述→决策两步(`wc-odds` → `wc-bet`):**
-- **先 `wc-odds`(描述层)**:取竞彩/Poly去水/欧盘共识三源,算去水隐含概率,报**市场共识**、**竞彩vs共识分歧**、**盘口异动**。从 `.cache/odds_cache.db` 读 Poly(不自抓)。**只描述、不判价值/不选腿**。
-- **再 `wc-bet`(决策层)**:接 wc-odds 的去水/共识 + v1/v2,算 value = 竞彩欧赔 × Poly去水(p_true)、EV%、分档
-  (🟢green≥1.03 / 🟡yellow0.97–1.03 / 🔴red<0.97明显-EV;⚪skip=陷阱桶/缺对应 Poly 线自动跳过),点出"最不亏"那条腿。
-- 落盘:`wc-bet` 维护 `reports/盘口下注复盘.md`。
-- 注:wc-odds/wc-bet 是下游(综合 v1/v2 的终点),不受 v1⊥v2 红线约束;红线只管 v1/v2 互不见。
+把每场的三个 baseline 串 + factCard 串收进下面入参的 `v2_baseline` / `v2_factcard`。
+(`match_key` = 竞彩 `zucai_num`,odds_cache 与 wc.db 同键;球队名经 `data/wc.db` 反查。)
 
-> 三条独立性的实现 = 三个独立 subagent 调用。派 v2 前**自检**:这份 prompt 里有没有任何
-> 来自 v1 的比分/概率/文字?有 → 删掉再派。
+#### 3b. 调 Workflow
+
+```
+Workflow({
+  name: 'wc-predict-fanout',
+  args: { matches: [
+    { match_key: '周四055', home_cn: '土耳其', away_cn: '美国',
+      ko_et: 'ET 6.25 21:00', ko_bj: '6.26 09:00',
+      v2_baseline: { had: '<HAD 串>', hhad: '<HHAD 串>', ttg: '<TTG 串>' },
+      v2_factcard: '<factCard 串>' },
+    // ...每场一条
+  ] }
+})
+```
+
+脚本对**每场**做:`parallel[v1 = wc-score-v1, v2 = wc-prob-v2, odds = wc-odds]` → `wc-bet`。
+
+**红线焊点(脚本如何物理保证 v1⊥v2,不靠主会话自觉):**
+1. v1 与 v2 是同一个 `parallel()` 里**两个各自独立的 `agent()` 调用**——并行派出,派 v2 的时刻
+   v1 还没返回,结构上拿不到 v1。
+2. `v2Prompt(m)` 是入参 `m` 的**纯函数**,只读 `m.v2_baseline` + `m.v2_factcard`,源里没有任何 v1 字段。
+3. v1 只落 `v1_predictions` 表 + 小组赛比分预测.md;v2 只读 odds 缓存 + enrich——两套存储不相交。
+   三重隔离。wc-odds / wc-bet 是**下游**(综合三方的终点),看 v1/v2 合理,不受红线约束。
+
+**各 agent 自落库(脚本里已指示):** v1 跑 `record_v1` + 回灌 `小组赛比分预测.md`;v2 跑
+`build_v2_prediction → record_v2_prediction`;wc-bet 维护 `reports/盘口下注复盘.md`。所以 workflow
+跑完,今天的 v1/v2 预测已在 `.cache/odds_cache.db`,可被第 4 步跑分卡来日(回填赛果后)计分。
+
+**返回值**(第 5 步直接拿它 join 成决策卡,无需重读库):
+```
+[{ match_key, home_cn, away_cn, ko_et, ko_bj,
+   v1: {probs:{h,d,a}, score_pred, rationale, ...},
+   v2: {probs:{h,d,a}, reliability, scenarios, deviated, ...},
+   odds: {consensus, divergence, moves, poly_fresh, ...},
+   value: {verdict, best_leg, legs} }, ...]
+```
+
+**诚实边界(必须懂):** 调 Workflow 会派**真 subagent、按量计费、做真预测+真落库**。务必在第 1 步场次
+已与用户确认、第 2 步盘口已刷新**之后**才调用。Workflow 在后台跑、完成有通知;`/workflows` 看实时进度。
+若某场某 pass 返回 null(agent 中途失败),该块缺即可,第 5 步按契约「缺哪块省哪块」降级。
+
+> 红线自检已交给脚本:`v2Prompt` 只引用 `m.v2_baseline`/`m.v2_factcard`。要改第 3 步派单逻辑,
+> 改 `.claude/workflows/wc-predict-fanout.js`,连带跑 `node .claude/workflows/wc-predict-fanout.dryrun.mjs`
+> 复核红线(它用 stub 打桩跑控制流,断言 v2 prompt 绝不含 v1 sentinel),别绕回手工派 subagent。
 
 ### 第 4 步 · 跑 v2 Brier 跑分卡
 
@@ -154,7 +185,8 @@ python3 tools/v2_report.py
    - 密码当作 secret:**绝不 print 到对话、绝不写进任何 reports/*.md 或库**(见项目记忆惯例)。
    - 用 `os.environ["WC_INGEST_PW"]` 或临时读 `config.toml` 进变量,只在 POST 的 Authorization 头里用一次。
 
-2. **三库三源 join 成 Decision 列表**(读 v1_predictions + v2_predictions + 价值结论)。
+2. **join 成 Decision 列表**。**首选直接用第 3b 步 workflow 的返回值**(每场已带 `v1`/`v2`/`odds`/`value`
+   结构化块),无需重读库;若要交叉核对可再读 `get_v1` / `get_v2_prediction`(agent 已自落库,数据同源)。
    每个 Decision 形状**严格按契约 §1**(任一块可整块缺,前端降级不崩):
    ```jsonc
    {
@@ -236,8 +268,8 @@ python3 tools/v2_report.py
 
 ## 红线 / 纪律速查
 
-- 🔴 **v1⊥v2:** 派 wc-prob-v2 的 prompt 只含 baseline_market + match_fact_card,
-  **零** v1 输出。三个独立 subagent 调用。护三方 Brier 对照。
+- 🔴 **v1⊥v2:** 由 `wc-predict-fanout` workflow **脚本结构焊死**——v1/v2 是同一 `parallel()` 里两个
+  独立 `agent()`,`v2Prompt` 只读 baseline + factCard 的纯函数,**零** v1 输出。护三方 Brier 对照。改派单逻辑改脚本、跑其 dry-run 复核,别绕回手工派。
 - 🔒 **密码 secret:** 看板密码从 config.toml 现取,**不 print、不入库、不写报告**。
 - 📏 **加不删:** 本 skill 只编排现有 agent/脚本,不重写预测/价值逻辑;不改 `.claude/agents/*.md`。
 - ⏱ **ET 铁律:** 开球判定一律看 ET 当下,温哥华场 PT = ET − 3。
