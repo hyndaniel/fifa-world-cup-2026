@@ -152,3 +152,89 @@ def test_fetch_results_honors_cfg_overrides(monkeypatch):
     assert captured["proxy"] == "http://127.0.0.1:7897"
     assert "matchBeginDate=2026-06-01" in captured["url"]
     assert "matchEndDate=2026-06-03" in captured["url"]
+
+
+def test_parse_results_status2_but_blank_score_not_finished():
+    """matchResultStatus=='2' 但 sectionsNo999 空/坏格式 → finished=False(防幻象 0-0 入账)。
+
+    回填只录 finished;这条 AND 守卫(results.py:69 `and score is not None`)是最后防线:
+    完赛标志已置但终比分暂空时,不得把 0-0 当已完赛录进 match_results 污染 Brier/台账。
+    """
+    data = {
+        "value": {
+            "matchResult": [
+                {"matchNumStr": "周五099", "matchResultStatus": "2", "sectionsNo999": ""},
+                {"matchNumStr": "周五100", "matchResultStatus": "2", "sectionsNo999": "2:"},
+            ]
+        }
+    }
+    rows = parse_results(data)
+    assert len(rows) == 2
+    assert all(r.finished is False for r in rows)
+    assert all((r.home_goals, r.away_goals) == (0, 0) for r in rows)
+
+
+def test_parse_results_skips_missing_num_and_handles_empty_input():
+    """缺 matchNumStr 的行被跳过(防 None key 污染下游);None/{} 输入安全返回 []。"""
+    data = {
+        "value": {
+            "matchResult": [
+                {"matchResultStatus": "2", "sectionsNo999": "1:0"},  # 缺 matchNumStr → 跳过
+                {"matchNumStr": "周四055", "matchResultStatus": "2", "sectionsNo999": "2:0"},
+            ]
+        }
+    }
+    rows = parse_results(data)
+    assert len(rows) == 1 and rows[0].zucai_num == "周四055"
+    assert parse_results(None) == []
+    assert parse_results({}) == []
+
+
+def test_http_get_json_proxy_selection_and_utf8_decode(monkeypatch):
+    """_http_get_json(cd956cc 新加 stdlib 抓取层)直测:代理选择 + utf-8 decode + json 解析。
+
+    不打真网:monkeypatch build_opener 截获 ProxyHandler,假 opener.open 返回 bytes。
+    锚住两条行为:(a) proxy=None → ProxyHandler({}) 显式禁用环境 *_PROXY;
+    (b) proxy 指定 → http/https 都走该代理。
+    """
+    import backend.results as R
+
+    captured: dict = {}
+
+    class _Resp:
+        def __init__(self, data):
+            self._data = data
+
+        def read(self):
+            return self._data
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    class _Opener:
+        def open(self, req, timeout=None):
+            captured["req"] = req
+            captured["timeout"] = timeout
+            return _Resp(b'{"value": {"matchResult": []}}')
+
+    def _fake_build_opener(*handlers):
+        captured["handlers"] = handlers
+        return _Opener()
+
+    monkeypatch.setattr(R, "build_opener", _fake_build_opener)
+
+    # (a) 无代理:utf-8 bytes 正确 decode+json;ProxyHandler 显式空(禁环境代理);timeout/url 透传
+    out = R._http_get_json("https://x.test/y?a=1", {"User-Agent": "ua"}, None, 9.0)
+    assert out == {"value": {"matchResult": []}}
+    assert captured["handlers"][0].proxies == {}
+    assert captured["timeout"] == 9.0
+    assert captured["req"].full_url == "https://x.test/y?a=1"
+
+    # (b) 指定代理:http/https 均命中
+    R._http_get_json("https://x.test/y", {}, "http://127.0.0.1:7897", 5.0)
+    proxies = captured["handlers"][0].proxies
+    assert proxies.get("http") == "http://127.0.0.1:7897"
+    assert proxies.get("https") == "http://127.0.0.1:7897"

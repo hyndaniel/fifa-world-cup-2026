@@ -3,13 +3,17 @@
 <!--
   本地定时刷三源(竞彩 sporttery + 欧盘 500 + Poly 7897代理)→ 推 HK 看板。
   取代旧的 com.wc.collect-zucai(它只推竞彩 raw)。
-  装之前: 把 REPO 改成本机仓库绝对路径, __看板密码__ 改成真实密码。
+  ⚠️ 解释器必须含 httpx:本链经 tools/refresh_all.py → backend.sporttery(import httpx)强依赖 httpx,
+     且 sporttery 文档化的 socks5 WAF 旁路还需 httpx[socks]——**禁用 /usr/bin/python3**(系统 3.9.6 无 httpx,
+     启动即 ModuleNotFoundError、刷盘作业崩在 import)。这与已 stdlib 化、可用 /usr/bin/python3 的 backfill 不同。
+  装之前: 把 PYTHON_WITH_HTTPX 改成装了 httpx 的 python3 绝对路径(如 /Users/heyining/bin/python3),
+          把 REPO 改成本机仓库绝对路径, __看板密码__ 改成真实密码。
 -->
 <plist version="1.0"><dict>
   <key>Label</key><string>com.wc.refresh-all</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/bin/python3</string>
+    <string>PYTHON_WITH_HTTPX</string>
     <string>REPO/tools/refresh_all.py</string>
     <string>--once</string>
   </array>

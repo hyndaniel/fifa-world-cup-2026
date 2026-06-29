@@ -152,3 +152,29 @@ def test_render_mech_tags_blank_name_when_wc_db_missing(tmp_path):
     text = out.read_text(encoding="utf-8")
     assert "| 周四055 |" in text                        # 行在,对阵列空
     assert "| 对阵 |" in text
+
+
+def test_backfill_rerecords_when_score_corrected(tmp_path):
+    # 承重墙自愈契约:临时比分被改判为终比分 → 检测到变化、重录并返回 key(非幂等跳过)。
+    # 杀变异体『只要 key 存在就跳过』——那会把更正后的终比分静默丢弃(台账/跑分卡不刷新)。
+    from backend.baseline import get_result_goals
+    db = str(tmp_path / "t.db")
+    assert B.backfill(db, [MatchResult("周四055", 2, 0, True)]) == ["周四055"]
+    # 同 key、比分变了 → 重录
+    assert B.backfill(db, [MatchResult("周四055", 2, 1, True)]) == ["周四055"]
+    assert get_result_goals(db, "周四055") == (2, 1)   # 库里已更新为更正后的比分
+
+
+def test_main_empty_db_selfheals_rc0(tmp_path, monkeypatch):
+    # 新部署/清库后,backfill.main 跑【真】_rerun_scorecard(不 mock)在空库上自愈:
+    # rc=0 且产出"配对场数: 0"最小跑分卡。锚住每5min重跑在空库不崩的承重墙防御。
+    import tools.v2_report as V
+    db = str(tmp_path / "t.db")
+    _empty_odds(db)                                    # 真链路里 odds_cache 总在(mech_tags 会查)
+    card = tmp_path / "card.md"
+    monkeypatch.setattr(V, "DEFAULT_OUT", str(card))   # 防真 v2_report 覆写实机 reports/预测v2.md
+    monkeypatch.setattr(B, "fetch_results", lambda *a, **k: [])   # 无赛果
+    rc = B.main(["--once", "--cache", db, "--tags-out", str(tmp_path / "ledger.md"),
+                 "--wc-db", str(tmp_path / "nope.db")])
+    assert rc == 0
+    assert "配对场数: 0" in card.read_text(encoding="utf-8")

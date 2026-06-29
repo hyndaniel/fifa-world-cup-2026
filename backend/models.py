@@ -1,4 +1,8 @@
 """核心类型 (契约, 所有任务共享)。"""
+# PEP604 `dict | None` 注解在 3.9 是运行期求值,无此行 import 即 TypeError;
+# 加 future 让注解惰性化 → 与 results.py/mech_tag.py 一致,backend 可在 /usr/bin/python3(3.9.6) import。
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 
 
