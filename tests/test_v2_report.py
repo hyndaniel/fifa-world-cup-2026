@@ -8,7 +8,7 @@ from backend.baseline import HAD_CFG, baseline_market, record_result
 from backend.v2_predict import build_v2_prediction, record_v2_prediction
 from backend.scorecard import score_arm
 from backend.v1_log import record_v1
-from tools.v2_report import collect, collect_score_arm, render
+from tools.v2_report import collect, collect_calibration, collect_score_arm, render
 
 
 def _collected_one_market():
@@ -144,6 +144,51 @@ def test_collect_score_arm_builds_rows(tmp_path):
     assert by_key["周三049"]["pred"] is None        # 无 v1 比分 → pred None
     out = score_arm(rows)
     assert out["n"] == 1                            # 只 1 场有 v1 比分
+
+
+def test_render_calibration_section():
+    # 校准段:每概率档比 均预测% vs 实际频率。v2 80% 档一中一不中→50%;市场全中→100%。
+    calib = {"v2": [(80.0, 1), (80.0, 0)], "market": [(80.0, 1), (80.0, 1)]}
+    md = render(_collected_one_market(),
+                {m: {"n_deviated": 0, "v2_mean": None, "market_mean": None, "delta": None}
+                 for m in ("had", "hhad", "ttg")}, calib=calib)
+    assert "## 校准" in md
+    assert "| 80–100% | 2 | 80% | 50.0% | 2 | 80% | 100.0% |" in md
+
+
+def test_render_without_calibration_back_compat():
+    # 不传 calib → 不渲染校准段(既有调用兼容)
+    md = render(_collected_one_market(),
+                {m: {"n_deviated": 0, "v2_mean": None, "market_mean": None, "delta": None}
+                 for m in ("had", "hhad", "ttg")})
+    assert "## 校准" not in md
+
+
+def test_collect_calibration_pairs_from_db():
+    # 真集成:播种 odds + 赛果 + v2 → 每场 had 三结果各一条 (概率%, 是否发生)。
+    d = tempfile.mkdtemp()
+    db = os.path.join(d, "c.db")
+    mk = "周三053"
+    conn = sqlite3.connect(db)
+    conn.execute("""CREATE TABLE odds_cache (id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts TEXT, source TEXT, match_key TEXT, label TEXT, ko TEXT, payload_json TEXT)""")
+    conn.execute("INSERT INTO odds_cache(ts,source,match_key,label,ko,payload_json) "
+                 "VALUES (?,?,?,?,?,?)",
+                 ("2026-06-25T09:00:00+08:00", "zucai", mk, "南非 vs 韩国", "ko",
+                  json.dumps({"had": {"h": 6.00, "d": 3.87, "a": 1.44}})))
+    conn.commit()
+    conn.close()
+    record_result(db, mk, 0, 1)  # 客胜(韩国 1.44 大热) → had actual = "a"
+    bl = baseline_market(db, mk, HAD_CFG)
+    pred = build_v2_prediction(mk, "中", [],
+                               {"had": {"baseline": bl["baseline"], "deviations": []}})
+    record_v2_prediction(db, mk, pred)
+
+    out = collect_calibration(db)
+    assert set(out) == {"v2", "market"}
+    assert len(out["market"]) == 3 and len(out["v2"]) == 3     # h/d/a 各一条
+    occ = [p for (p, y) in out["market"] if y == 1]
+    assert len(occ) == 1 and occ[0] > 50                       # 命中的是大热档,概率>50%
 
 
 def test_render_deviation_attribution_lists_factor_source():
