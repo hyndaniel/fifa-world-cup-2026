@@ -209,6 +209,12 @@ async function runMatch(m) {
     () => agent(oddsPrompt(m), { agentType: 'wc-odds', model: 'opus', phase: '预测 fan-out', label: `odds:${m.match_key}`, schema: ODDS_SCHEMA }),
   ])
 
+  // 三方全失败 → 不浪费一次计费的 bet 派单(下游「缺块省块」自会兜)
+  if (!v1 && !v2 && !odds) {
+    log(`⚠️ ${m.match_key}: v1/v2/odds 全失败,跳过 wc-bet。`)
+    return { match_key: m.match_key, home_cn: m.home_cn, away_cn: m.away_cn, ko_et: m.ko_et || null, ko_bj: m.ko_bj || null, v1: null, v2: null, odds: null, value: null }
+  }
+
   // wc-bet 需要三方齐了才能综合 → 串在 fan-out 之后
   const value = await agent(betPrompt(m, v1, v2, odds), {
     agentType: 'wc-bet', model: 'opus', phase: '价值决策', label: `bet:${m.match_key}`, schema: BET_SCHEMA,

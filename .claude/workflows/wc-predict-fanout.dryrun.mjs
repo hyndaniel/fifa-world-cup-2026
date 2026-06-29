@@ -15,7 +15,8 @@ const recorded = []
 const agent = async (prompt, opts) => {
   recorded.push({ label: opts && opts.label, agentType: opts && opts.agentType, prompt })
   const t = opts && opts.agentType
-  if (t === 'wc-score-v1') return { match_key: '周四055', probs: { h: 99, d: 99, a: 99 }, score_pred: 'V1SENTINEL-9-9', rationale: 'V1SECRET-RATIONALE-XYZ', qualification: 'V1SECRET-QUAL', persisted: true }
+  // probs 用可检测 sentinel(917/918/919),抓「只把 v1 胜平负% 当先验塞进 v2」这种部分泄漏
+  if (t === 'wc-score-v1') return { match_key: '周四055', probs: { h: 917, d: 918, a: 919 }, score_pred: 'V1SENTINEL-9-9', rationale: 'V1SECRET-RATIONALE-XYZ', qualification: 'V1SECRET-QUAL', persisted: true }
   if (t === 'wc-prob-v2') return { match_key: '周四055', probs: { h: 40, d: 30, a: 30 }, reliability: '中', scenarios: ['默契平'], deviated: false, deviations: [], persisted: true }
   if (t === 'wc-odds') return { match_key: '周四055', consensus: '主胜略占优', divergence: '竞彩主胜更慷慨 +3pp', moves: '无', poly_fresh: true, note: '' }
   if (t === 'wc-bet') return { match_key: '周四055', verdict: '无真价值,空仓最优', best_leg: { market: 'hhad', outcome: 'a', desc: '美国 +0.5', flag: 'yellow', ev_pct: -1.1 }, legs: [], persisted: true }
@@ -48,11 +49,15 @@ const v1rec = recorded.find((r) => r.label && r.label.startsWith('v1:'))
 const betrec = recorded.find((r) => r.label && r.label.startsWith('bet:'))
 if (!v2rec) fail.push('没记录到 v2 派单')
 if (!v1rec) fail.push('没记录到 v1 派单')
+if (recorded.length !== 4) fail.push(`每场应派 4 个 agent(v1/v2/odds/bet),实得 ${recorded.length}`)
 const v2HasBaseline = v2rec && v2rec.prompt.includes('HADBASE-uniq') && v2rec.prompt.includes('FACTCARD-NEUTRAL-uniq')
-const v2LeaksV1 = v2rec && (v2rec.prompt.includes('V1SENTINEL') || v2rec.prompt.includes('V1SECRET'))
+// 红线泄漏:字符串字段(score/rationale)或 probs sentinel(917/918/919)任一现身 v2 prompt = 破
+const v2LeaksV1 = v2rec && (v2rec.prompt.includes('V1SENTINEL') || v2rec.prompt.includes('V1SECRET') ||
+  v2rec.prompt.includes('917') || v2rec.prompt.includes('918') || v2rec.prompt.includes('919'))
 if (!v2HasBaseline) fail.push('v2 prompt 未含 baseline/factcard')
-if (v2LeaksV1) fail.push('🔴🔴 v2 prompt 泄漏了 v1 输出 —— 红线破!')
+if (v2LeaksV1) fail.push('🔴🔴 v2 prompt 泄漏了 v1 输出(含 probs 先验)—— 红线破!')
 const betSeesAll = betrec && betrec.prompt.includes('V1SENTINEL') && betrec.prompt.includes('默契平') && betrec.prompt.includes('主胜略占优')
+if (!betSeesAll) fail.push('bet prompt 未见三方(v1/v2/odds 综合退化)')
 
 console.log('=== wc-predict-fanout dry-run(stub agent)===')
 console.log('返回场数            :', Array.isArray(out) ? out.length : 'N/A')
