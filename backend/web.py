@@ -31,6 +31,7 @@ from pydantic import BaseModel
 
 from backend.config import load_config
 from backend.db import Db
+from backend import bet_stats
 from backend import poller
 from backend import reports as reports_mod
 from backend.state import BJ, build_state, datetime, decisions_view
@@ -68,7 +69,7 @@ def _auth_enabled(cfg, require_auth):
 
 
 def create_app(db_path="wc.db", cfg=None, reports_dir="reports",
-               frontend_dir="frontend", require_auth=None) -> FastAPI:
+               frontend_dir="frontend", data_dir="data", require_auth=None) -> FastAPI:
     if cfg is None:
         cfg = load_config()
 
@@ -219,6 +220,13 @@ def create_app(db_path="wc.db", cfg=None, reports_dir="reports",
             "ts": now_bj.isoformat(timespec="seconds"),
             "decisions": decisions_view(db.get_decisions(), now_bj, odds_map=db.get_odds()),
         }
+
+    # ---------------- /api/bets/summary ----------------
+    # 下注统计面板据此渲染: 推荐腿战绩(命中率/分档) + 实购票盈亏(ROI)。
+    # 只读 data/bet_ledger.json(手整台账镜像), 文件缺失返回空 summary。
+    @app.get("/api/bets/summary", dependencies=[Depends(auth_dep)])
+    def api_bets_summary():
+        return bet_stats.build_summary(bet_stats.load_ledger(data_dir))
 
     # ---------------- /api/refresh ----------------
     # 价值"重抓+刷新"按钮用: 取最新一条 source='zucai_raw' 的原始信封 (由 /api/ingest/zucai

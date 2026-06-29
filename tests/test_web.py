@@ -327,6 +327,27 @@ def test_refresh_triggers_poll_once_with_snapshot(client, monkeypatch):
     assert captured.get("n", 0) >= 1  # 原始信封被正确回放, 解析出 >=1 场
 
 
+def test_bets_summary_ok(client):
+    c, _ = client
+    r = c.get("/api/bets/summary")
+    assert r.status_code == 200
+    body = r.json()
+    assert "recommendations" in body and "tickets" in body
+    # 默认 data_dir="data" → 真台账: green=0, 票 -292
+    assert body["recommendations"]["by_tier"]["green"]["total"] == 0
+    assert body["tickets"]["total_pnl"] == -292
+
+
+def test_bets_summary_missing_file_is_empty(tmp_path):
+    cfg = load_config("nope.toml")
+    app = create_app(db_path=str(tmp_path / "t.db"), cfg=cfg,
+                     require_auth=False, data_dir=str(tmp_path / "no_data"))
+    c = TestClient(app)
+    r = c.get("/api/bets/summary")
+    assert r.status_code == 200
+    assert r.json()["tickets"]["count"] == 0
+
+
 def test_auth_enforced_when_password_set(tmp_path):
     db_path = tmp_path / "auth.db"
     db = Db(str(db_path))
