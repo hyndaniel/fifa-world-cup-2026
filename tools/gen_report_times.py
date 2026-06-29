@@ -35,6 +35,7 @@ def main(reports_dir="reports"):
         print(f"no such dir: {reports_dir}", file=sys.stderr)
         return 1
     times = {}
+    seen = {}  # stem -> 首次命中的相对路径, 用于检测跨子目录同名碰撞
     # 递归扫子目录 (agents/scoring/intel), 跳过下划线目录 (_archive/_state) —— 与 backend/reports.py 一致
     for p in sorted(base.rglob("*.md")):
         rel = p.relative_to(base)
@@ -42,6 +43,12 @@ def main(reports_dir="reports"):
             continue
         if p.name.startswith("."):
             continue
+        # name=stem 是看板的 URL 标识(见 backend/reports.py), 必须全局唯一。
+        # 同 stem 跨子目录 → list_reports 出重复卡、read_report 取序不定 → 迁移漏改的早期信号。
+        if p.stem in seen:
+            print(f"⚠️ 报告 stem 碰撞: '{p.stem}' 同时在 {seen[p.stem]} 与 {rel} —— "
+                  f"看板会出重复卡/取序不定, 请改名或迁移到位。", file=sys.stderr)
+        seen[p.stem] = rel
         ts = git_ts(p)
         if ts is None:
             ts = int(p.stat().st_mtime)

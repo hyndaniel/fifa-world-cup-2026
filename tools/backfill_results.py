@@ -24,7 +24,7 @@ from backend.scenarios import rebuild_hits, scenario_hit  # noqa: E402
 from backend.v2_predict import get_v2_prediction  # noqa: E402
 
 DEFAULT_CACHE = str(REPO / ".cache" / "odds_cache.db")
-DEFAULT_TAGS_OUT = str(REPO / "reports" / "复盘对错标.md")
+DEFAULT_TAGS_OUT = str(REPO / "reports" / "scoring" / "复盘对错标.md")  # §3 命名迁移:scoring/ 子目录
 DEFAULT_WC_DB = str(REPO / "data" / "wc.db")
 DEFAULT_SCENARIO_LIB = str(REPO / "reports" / "scenario_library.json")
 
