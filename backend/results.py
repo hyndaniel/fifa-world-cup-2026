@@ -10,10 +10,11 @@
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import date, timedelta
-
-import httpx
+from urllib.parse import urlencode
+from urllib.request import ProxyHandler, Request, build_opener
 
 # 完赛标志: matchResultStatus 取此值才算已完赛已开奖。
 FINISHED_STATUS = "2"
@@ -71,6 +72,23 @@ def parse_results(data: dict) -> list[MatchResult]:
     return out
 
 
+def _http_get_json(url: str, headers: dict, proxy: str | None, timeout: float) -> dict:
+    """GET url → 解析 JSON,纯 stdlib(urllib)。无第三方依赖,任何 python3 可跑。
+
+    proxy 仅支持 http/https(urllib ProxyHandler);为空时显式禁用代理(传空 dict
+    给 ProxyHandler)→ 确定性直连,不被环境里的 *_PROXY 变量劫持(回填闭环要稳)。
+    socks5 不被 stdlib 原生支持(需 PySocks);results 在实机为直连,故不需要——
+    若将来要给 results 走 socks5 过 WAF,须另引依赖或改回 httpx,见 [zucai] 走 sporttery.py。
+    HTTP 4xx/5xx 由 opener.open 抛 HTTPError(等价 httpx raise_for_status),
+    交由调用方(backfill_results.main)按"抓取失败 → signal 1"优雅处理。
+    """
+    req = Request(url, headers=headers)
+    handler = ProxyHandler({"http": proxy, "https": proxy}) if proxy else ProxyHandler({})
+    opener = build_opener(handler)
+    with opener.open(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
 def fetch_results(cfg: dict | None = None, timeout: float = 30.0) -> list[MatchResult]:
     """GET sporttery 开奖接口 → parse_results → list[MatchResult]。
 
@@ -79,7 +97,8 @@ def fetch_results(cfg: dict | None = None, timeout: float = 30.0) -> list[MatchR
     日期窗默认 = 今天往前 DEFAULT_LOOKBACK_DAYS 天 ~ 今天 (相对日期), 可经
     cfg["results"]["begin_date"]/["end_date"] (YYYY-MM-DD) 覆盖。
 
-    模式严格参照 backend.sporttery.fetch: httpx.Client、proxy 可选、raise_for_status。
+    抓取走 _http_get_json (纯 stdlib urllib): 回填闭环的 launchd 解释器无需装 httpx,
+    /usr/bin/python3 也能跑——刻意不依赖第三方,承接项目 stdlib-first 规范 (§7.2)。
     """
     rcfg = (cfg or {}).get("results") or {}
     api = rcfg.get("api") or DEFAULT_API
@@ -107,10 +126,5 @@ def fetch_results(cfg: dict | None = None, timeout: float = 30.0) -> list[MatchR
         "matchPage": "1",
         "pcOrWap": "1",
     }
-    client_kwargs: dict = {"timeout": timeout}
-    if proxy:
-        client_kwargs["proxy"] = proxy
-    with httpx.Client(**client_kwargs) as client:
-        resp = client.get(api, params=params, headers=headers)
-        resp.raise_for_status()
-        return parse_results(resp.json())
+    url = f"{api}?{urlencode(params)}"
+    return parse_results(_http_get_json(url, headers, proxy, timeout))

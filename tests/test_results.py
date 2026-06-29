@@ -74,9 +74,9 @@ def test_parse_results_skips_unfinished():
 
 
 def test_fetch_results_calls_endpoint_and_parses(monkeypatch):
-    """mock httpx.Client: 验证 fetch_results 打命中端点 + 经 parse_results 返回。
+    """mock stdlib 抓取层 _http_get_json: 验证 fetch_results 打命中端点 + 经 parse_results 返回。
 
-    不打真网。捕获 client.get 的实参, 断言端点/参数对齐 Task 1 notes。
+    不打真网。捕获 _http_get_json 的实参 (url/headers/proxy), 断言端点/参数对齐 Task 1 notes。
     """
     import backend.results as R
 
@@ -93,30 +93,14 @@ def test_fetch_results_calls_endpoint_and_parses(monkeypatch):
     }
     captured: dict = {}
 
-    class _Resp:
-        def raise_for_status(self):
-            pass
+    def _fake_get(url, headers, proxy, timeout):
+        captured["url"] = url
+        captured["headers"] = headers
+        captured["proxy"] = proxy
+        captured["timeout"] = timeout
+        return sample
 
-        def json(self):
-            return sample
-
-    class _Client:
-        def __init__(self, **kw):
-            captured["client_kwargs"] = kw
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *a):
-            return False
-
-        def get(self, url, params=None, headers=None):
-            captured["url"] = url
-            captured["params"] = params
-            captured["headers"] = headers
-            return _Resp()
-
-    monkeypatch.setattr(R.httpx, "Client", _Client)
+    monkeypatch.setattr(R, "_http_get_json", _fake_get)
 
     rows = R.fetch_results()
 
@@ -125,62 +109,46 @@ def test_fetch_results_calls_endpoint_and_parses(monkeypatch):
         r.zucai_num == "周四055" and r.home_goals == 2 and r.finished
         for r in rows
     )
-    # 命中 Task 1 实测端点 (不是被 WAF 拦的 getMatchResultV1)
-    assert captured["url"] == R.DEFAULT_API
+    # 命中 Task 1 实测端点 (不是被 WAF 拦的 getMatchResultV1), 参数 baked 进 query string
+    assert captured["url"].startswith(R.DEFAULT_API + "?")
     assert "getUniformMatchResultV1.qry" in captured["url"]
-    # 关键查询参数齐备
-    p = captured["params"]
-    assert p["pageNo"] == "1"
-    assert p["isFix"] == "0"
-    assert "matchBeginDate" in p and "matchEndDate" in p
+    # 关键查询参数齐备 (urlencode 后)
+    assert "pageNo=1" in captured["url"]
+    assert "isFix=0" in captured["url"]
+    assert "matchBeginDate=" in captured["url"] and "matchEndDate=" in captured["url"]
     # Referer 过 WAF
     assert captured["headers"]["Referer"] == R.REFERER
+    # 缺省直连: 无代理
+    assert captured["proxy"] is None
 
 
 def test_fetch_results_honors_cfg_overrides(monkeypatch):
-    """cfg.results 覆盖 api/ua/proxy/日期范围。"""
+    """cfg.results 覆盖 api/ua/proxy/日期范围 (proxy 走 http/https stdlib 路径)。"""
     import backend.results as R
 
     captured: dict = {}
 
-    class _Resp:
-        def raise_for_status(self):
-            pass
+    def _fake_get(url, headers, proxy, timeout):
+        captured["url"] = url
+        captured["headers"] = headers
+        captured["proxy"] = proxy
+        return {"value": {"matchResult": []}}
 
-        def json(self):
-            return {"value": {"matchResult": []}}
-
-    class _Client:
-        def __init__(self, **kw):
-            captured["client_kwargs"] = kw
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *a):
-            return False
-
-        def get(self, url, params=None, headers=None):
-            captured["url"] = url
-            captured["params"] = params
-            captured["headers"] = headers
-            return _Resp()
-
-    monkeypatch.setattr(R.httpx, "Client", _Client)
+    monkeypatch.setattr(R, "_http_get_json", _fake_get)
 
     cfg = {
         "results": {
             "api": "https://example.test/x.qry",
             "ua": "custom-ua",
-            "proxy": "socks5://127.0.0.1:7897",
+            "proxy": "http://127.0.0.1:7897",
             "begin_date": "2026-06-01",
             "end_date": "2026-06-03",
         }
     }
     R.fetch_results(cfg)
 
-    assert captured["url"] == "https://example.test/x.qry"
+    assert captured["url"].startswith("https://example.test/x.qry?")
     assert captured["headers"]["User-Agent"] == "custom-ua"
-    assert captured["client_kwargs"].get("proxy") == "socks5://127.0.0.1:7897"
-    assert captured["params"]["matchBeginDate"] == "2026-06-01"
-    assert captured["params"]["matchEndDate"] == "2026-06-03"
+    assert captured["proxy"] == "http://127.0.0.1:7897"
+    assert "matchBeginDate=2026-06-01" in captured["url"]
+    assert "matchEndDate=2026-06-03" in captured["url"]

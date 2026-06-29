@@ -4,6 +4,8 @@
   赛果回填闭环常驻:每 5 分钟跑 tools/backfill_results.py --once(幂等无害重跑)。
   抓终比分 → record_result(upsert)→ 机械对错标台账 → 重跑跑分卡。
   赛果抓取走中国住宅 IP 直连,本机无需代理;脚本经 __file__ 自锚仓库根,无需 WorkingDirectory。
+  解释器用系统 /usr/bin/python3 即可:整条 import 链(results/baseline/mech_tag/v2_report)纯 stdlib,
+  抓取已从 httpx 改 urllib(见 backend/results.py),无任何第三方依赖——别改成需装 httpx 的 venv python。
   上线(用户手动): cp 本文件到 ~/Library/LaunchAgents/ 后 launchctl load。
 -->
 <plist version="1.0"><dict>
