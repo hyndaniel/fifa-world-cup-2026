@@ -792,75 +792,96 @@ async function unpin(id) {
   await refreshState();
 }
 
-// ================= 账本 =================
-function renderLedger(ledger) {
-  const a = (ledger && ledger.A) || { stake: 0, pnl: 0, roi: 0, n: 0 };
-  const b = (ledger && ledger.B) || { budget: 0, spent: 0, pnl: 0, n: 0 };
-
-  const aRows = $("#wallet-a-rows");
-  aRows.innerHTML = "";
-  aRows.appendChild(ledgerRow("下注数", a.n));
-  aRows.appendChild(ledgerRow("累计注码", fmtNum(a.stake)));
-  aRows.appendChild(ledgerRow("盈亏", fmtNum(a.pnl), a.pnl));
-  aRows.appendChild(ledgerRow("ROI", fmtSignedPct((a.roi || 0) * 100), a.roi));
-
-  const bRows = $("#wallet-b-rows");
-  bRows.innerHTML = "";
-  bRows.appendChild(ledgerRow("下注数", b.n));
-  bRows.appendChild(ledgerRow("周预算", fmtNum(b.budget)));
-  bRows.appendChild(ledgerRow("已花", fmtNum(b.spent)));
-  const remain = (Number(b.budget) || 0) - (Number(b.spent) || 0);
-  bRows.appendChild(ledgerRow("剩余", fmtNum(remain), remain));
-  bRows.appendChild(ledgerRow("盈亏", fmtNum(b.pnl), b.pnl));
+// ================= 下注统计 =================
+async function loadBetStats() {
+  try {
+    const s = await apiGet("/api/bets/summary");
+    renderBetStats(s);
+  } catch (_) { /* 静默: 面板保持占位 */ }
 }
-function ledgerRow(k, v, signFor) {
-  const row = el("div", "led-row");
-  row.appendChild(el("span", "led-k", k));
-  const vEl = el("span", "led-v", String(v));
-  if (signFor != null && !Number.isNaN(Number(signFor))) {
-    const n = Number(signFor);
-    if (n > 0) vEl.classList.add("pos");
-    else if (n < 0) vEl.classList.add("neg");
+
+function renderBetStats(s) {
+  const recs = (s && s.recommendations) || {};
+  const tix = (s && s.tickets) || {};
+
+  // — 推荐腿战绩 —
+  const sub = $("#bs-recs-sub");
+  if (sub) sub.textContent = `${recs.total || 0} 条 · ${recs.settled || 0} 已结 · ${recs.pending || 0} 待结`;
+  const big = $("#bs-hit-big");
+  if (big) big.textContent = `命中 ${recs.win || 0}/${recs.settled || 0}　(${fmtPct((recs.hit_rate || 0) * 100)})`;
+
+  const bar = $("#bs-tier-bar");
+  if (bar) {
+    bar.innerHTML = "";
+    const tiers = [
+      { k: "green", label: "🟢", cls: "tb-green" },
+      { k: "yellow", label: "🟡", cls: "tb-yellow" },
+      { k: "red", label: "🔴", cls: "tb-red" },
+    ];
+    for (const t of tiers) {
+      const o = (recs.by_tier && recs.by_tier[t.k]) || { total: 0, win: 0 };
+      const seg = el("div", `tb-seg ${t.cls}`);
+      seg.appendChild(el("span", "tb-emoji", t.label));
+      seg.appendChild(el("span", "tb-num", `${o.win}/${o.total}`));
+      bar.appendChild(seg);
+    }
   }
-  row.appendChild(vEl);
-  return row;
-}
 
-function setupBetForm() {
-  const form = $("#bet-form");
-  const openBtn = $("#open-bet-form");
-  const cancelBtn = $("#cancel-bet");
-  const msg = $("#bet-msg");
-
-  openBtn.addEventListener("click", () => { form.hidden = !form.hidden; });
-  cancelBtn.addEventListener("click", () => { form.hidden = true; msg.textContent = ""; });
-
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    msg.textContent = "";
-    const wallet = $("#bet-wallet").value;
-    const stake = parseFloat($("#bet-stake").value);
-    const odds = parseFloat($("#bet-odds").value);
-    const legsText = $("#bet-legs").value.trim();
-    const note = $("#bet-note").value.trim();
-    if (!(stake > 0) || !(odds >= 1)) {
-      msg.textContent = "注码需 >0, 赔率需 >=1";
-      msg.className = "bet-msg err";
-      return;
+  const bd = $("#bs-bydate");
+  if (bd) {
+    bd.innerHTML = "";
+    for (const d of recs.by_date || []) {
+      const row = el("div", "bs-date-row");
+      row.appendChild(el("span", "bs-date-k", d.date.slice(5)));
+      row.appendChild(el("span", "bs-date-v", `${d.win}/${d.settled}`));
+      bd.appendChild(row);
     }
-    const legs = legsText ? legsText.split(",").map((s) => ({ desc: s.trim() })).filter((l) => l.desc) : [];
-    try {
-      await apiSend("/api/bets", "POST", { wallet, legs, stake, odds, note });
-      msg.textContent = "已记账";
-      msg.className = "bet-msg ok";
-      form.reset();
-      await refreshState();
-      setTimeout(() => { form.hidden = true; msg.textContent = ""; }, 800);
-    } catch (err) {
-      msg.textContent = "失败: " + err.message;
-      msg.className = "bet-msg err";
+  }
+
+  const hypo = $("#bs-hypo");
+  if (hypo) {
+    hypo.innerHTML = "";
+    const pnl = recs.hypo_unit_pnl || 0;
+    const line = el("div", "bs-hypo-line");
+    const v = el("span", "bs-hypo-v " + (pnl > 0 ? "pos" : pnl < 0 ? "neg" : ""),
+      `${pnl > 0 ? "+" : ""}${fmtNum(pnl)} 单位 (${fmtSignedPct((recs.hypo_roi || 0) * 100)})`);
+    line.appendChild(el("span", "bs-hypo-k", "假设每条 best_leg 各投 1 注"));
+    line.appendChild(v);
+    hypo.appendChild(line);
+    hypo.appendChild(el("div", "bs-hypo-cap",
+      "非真钱;正收益是高赔腿方差兑现,全部腿赛前皆 -EV、不可复制"));
+  }
+
+  // — 实购票盈亏 —
+  const tsub = $("#bs-tix-sub");
+  if (tsub) tsub.textContent = `${tix.count || 0} 张 · ${tix.won || 0} 中`;
+  const tbl = $("#bs-ticket-table");
+  if (tbl) {
+    tbl.innerHTML = "";
+    const head = el("div", "tk-row tk-head");
+    ["日期", "谁", "票型", "注", "命中", "盈亏"].forEach((h, i) =>
+      head.appendChild(el("span", "tk-c tk-c" + i, h)));
+    tbl.appendChild(head);
+    for (const r of tix.rows || []) {
+      const row = el("div", "tk-row");
+      row.appendChild(el("span", "tk-c tk-c0", (r.date || "").slice(5)));
+      row.appendChild(el("span", "tk-c tk-c1", r.who || ""));
+      row.appendChild(el("span", "tk-c tk-c2", r.type || ""));
+      row.appendChild(el("span", "tk-c tk-c3", fmtNum(r.stake)));
+      row.appendChild(el("span", "tk-c tk-c4", r.legs_hit || ""));
+      const pnlEl = el("span", "tk-c tk-c5 " + (r.pnl < 0 ? "neg" : r.pnl > 0 ? "pos" : ""), fmtNum(r.pnl));
+      row.appendChild(pnlEl);
+      tbl.appendChild(row);
     }
-  });
+  }
+  const tot = $("#bs-tix-total");
+  if (tot) {
+    tot.innerHTML = "";
+    tot.appendChild(el("span", "bs-tot-k", "合计"));
+    tot.appendChild(el("span", "bs-tot-stake", `投 ${fmtNum(tix.total_stake)}`));
+    tot.appendChild(el("span", "bs-tot-pnl neg", `盈亏 ${fmtNum(tix.total_pnl)}`));
+    tot.appendChild(el("span", "bs-tot-roi neg", `ROI ${fmtSignedPct((tix.roi || 0) * 100)}`));
+  }
 }
 
 // ================= 报告 tab =================
@@ -984,6 +1005,7 @@ function activateTab(tab, updateHash) {
   }
   if (tab === "reports") loadReportsList();
   if (tab === "decisions") loadDecisions();
+  if (tab === "dashboard") loadBetStats();
 }
 function setupTabs() {
   $$(".tab-btn").forEach((btn) => {
@@ -1041,7 +1063,6 @@ async function refreshState() {
     setCutoff(s.next_cutoff);
     renderRadar(s.value_radar || []);
     renderWatchlist(s.watchlist || []);
-    renderLedger(s.ledger || {});
     $("#updated-at").textContent = "同步 " + (s.ts ? s.ts.replace("T", " ").slice(0, 19) : new Date().toLocaleTimeString());
   } catch (err) {
     setConn(false);
@@ -1054,7 +1075,6 @@ async function refreshState() {
 function init() {
   setupTabs();
   setupWatchAdd();
-  setupBetForm();
   setupRadarRefresh();
   window.matchMedia("(max-width:820px)").addEventListener("change", () => {
     if ($("#view-decisions") && $("#view-decisions").classList.contains("active")) {
@@ -1067,6 +1087,7 @@ function init() {
   if (TABS.includes(initial) && initial !== "decisions") activateTab(initial, false);
   state.cdTimer = setInterval(tickCountdown, 1000);
   refreshState();
+  loadBetStats();
   state.pollTimer = setInterval(refreshState, POLL_INTERVAL_MS);
 }
 

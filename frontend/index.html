@@ -129,50 +129,33 @@
         </div>
       </section>
 
-      <!-- 账本 (A 价值单关 / B 清醒彩票) -->
-      <section class="panel" id="panel-ledger">
+      <!-- 下注统计 (推荐腿战绩 / 实购票盈亏) -->
+      <section class="panel" id="panel-betstats">
         <div class="panel-head">
-          <span class="eyebrow">ledger · 账本</span>
-          <h2 class="panel-h">守下限 · 不上头</h2>
+          <span class="eyebrow">stats · 下注统计</span>
+          <h2 class="panel-h">战绩 · 盈亏 · 不自欺</h2>
         </div>
-        <div class="ledger-grid">
-          <div class="wallet wallet-a" id="wallet-a">
-            <div class="wallet-h"><span class="wallet-id">A</span>价值单关</div>
-            <div class="wallet-rows" id="wallet-a-rows"></div>
+        <p class="panel-sub">推荐腿命中率与实购票真实盈亏 · 数据源自 wc-bet 台账</p>
+
+        <!-- 推荐腿战绩 -->
+        <div class="bs-block" id="bs-recs">
+          <div class="bs-block-h">推荐腿战绩 <span class="bs-sub" id="bs-recs-sub">—</span></div>
+          <div class="bs-hitline">
+            <span class="bs-hit-big" id="bs-hit-big">—</span>
+            <span class="bs-hit-cap">命中 ≠ 有价值 · 🟢green 迄今 0</span>
           </div>
-          <div class="wallet wallet-b" id="wallet-b">
-            <div class="wallet-h"><span class="wallet-id">B</span>清醒彩票</div>
-            <div class="wallet-rows" id="wallet-b-rows"></div>
-          </div>
+          <div class="tier-bar" id="bs-tier-bar"></div>
+          <div class="bs-bydate" id="bs-bydate"></div>
+          <div class="bs-hypo" id="bs-hypo"></div>
         </div>
-        <button class="btn btn-block" id="open-bet-form" type="button">＋ 记一笔</button>
-        <form class="bet-form" id="bet-form" hidden>
-          <div class="bet-row">
-            <label>钱包
-              <select id="bet-wallet">
-                <option value="A">A 价值单关</option>
-                <option value="B">B 清醒彩票</option>
-              </select>
-            </label>
-            <label>注码
-              <input id="bet-stake" type="number" step="0.01" min="0" placeholder="5" />
-            </label>
-            <label>赔率
-              <input id="bet-odds" type="number" step="0.01" min="1" placeholder="4.55" />
-            </label>
-          </div>
-          <label class="bet-legs-label">腿 (描述, 逗号分隔)
-            <input id="bet-legs" type="text" placeholder="西班牙 vs 佛得角 让-2 平" />
-          </label>
-          <label class="bet-note-label">备注
-            <input id="bet-note" type="text" placeholder="可选" />
-          </label>
-          <div class="bet-actions">
-            <button type="submit" class="btn btn-save-bet">保存</button>
-            <button type="button" class="btn btn-cancel" id="cancel-bet">取消</button>
-          </div>
-          <div class="bet-msg" id="bet-msg"></div>
-        </form>
+
+        <!-- 实购票盈亏 -->
+        <div class="bs-block" id="bs-tickets">
+          <div class="bs-block-h">实购票盈亏 <span class="bs-sub" id="bs-tix-sub">—</span></div>
+          <div class="ticket-table" id="bs-ticket-table"></div>
+          <div class="bs-tix-total" id="bs-tix-total"></div>
+          <div class="bs-foot">足彩长期 -EV;此处真金白银全归零,非投资建议。</div>
+        </div>
       </section>
     </section>
 
