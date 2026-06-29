@@ -3,22 +3,31 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 
+PEOPLE = {"你", "LYH", "ZFW", "LYZ", "YBB"}
+
 
 def test_ledger_json_loads_and_totals():
     data = json.loads((REPO / "data" / "bet_ledger.json").read_text(encoding="utf-8"))
     recs = data["recommendations"]
     tix = data["tickets"]
-    # 17 条推荐腿: 14 已结 + 3 pending
+    # 推荐腿不变: 17 条 = 14 已结 + 3 pending, green 迄今 = 0(诚实锚点)
     assert len(recs) == 17
     assert sum(1 for r in recs if r["settled"]) == 14
     assert sum(1 for r in recs if r["result"] == "pending") == 3
-    # green 迄今 = 0(诚实锚点)
     assert sum(1 for r in recs if r["tier"] == "green") == 0
-    # 实购票 6 张, 合计 stake 292 / pnl -292 / 0 中
-    assert len(tix) == 6
-    assert sum(t["stake"] for t in tix) == 292
-    assert sum(t["pnl"] for t in tix) == -292
-    assert all(t["pnl"] < 0 for t in tix)
+    # 实购票现 42 张, 跨 5 人, 含待结(pnl=null)
+    assert len(tix) == 42
+    people = set(data["people"])
+    assert people == PEOPLE
+    for t in tix:
+        assert t["who"] in people
+        assert isinstance(t["settled"], bool)
+        # pnl 可为 null(待结) 或数字(已结)
+        assert t["pnl"] is None or isinstance(t["pnl"], (int, float))
+        if not t["settled"]:
+            assert t["pnl"] is None
+        else:
+            assert isinstance(t["pnl"], (int, float))
 
 
 from backend.bet_stats import build_summary
@@ -39,6 +48,7 @@ SAMPLE = {
 
 
 def test_build_summary_recommendations():
+    # 推荐腿段不变(本任务不碰推荐逻辑)
     s = build_summary(SAMPLE)["recommendations"]
     assert s["total"] == 4
     assert s["settled"] == 3
@@ -56,41 +66,131 @@ def test_build_summary_recommendations():
     assert s["by_date"][0] == {"date": "2026-06-24", "settled": 2, "win": 1}
 
 
-def test_build_summary_tickets():
-    s = build_summary(SAMPLE)["tickets"]
-    assert s["count"] == 2
-    assert s["won"] == 0
-    assert s["total_stake"] == 90
-    assert s["total_pnl"] == -90
-    assert s["roi"] == -1.0
-    assert len(s["rows"]) == 2
+# ---- tickets v2: 构造小 ledger 验待结隔离 + by_person 聚合 ----
+
+TICKET_SAMPLE = {
+    "recommendations": [],
+    "tickets": [
+        {"date": "2026-06-24", "who": "A", "type": "t", "stake": 100, "legs_hit": "4/4", "pnl": 300.0, "settled": True},   # 已结-赢
+        {"date": "2026-06-25", "who": "A", "type": "t", "stake": 50, "legs_hit": "0/4", "pnl": -50.0, "settled": True},     # 已结-亏
+        {"date": "2026-06-30", "who": "B", "type": "t", "stake": 70, "legs_hit": "待结", "pnl": None, "settled": False},     # 待结
+    ],
+}
+
+
+def test_build_summary_tickets_pending_isolation():
+    s = build_summary(TICKET_SAMPLE)["tickets"]
+    assert s["count"] == 3
+    assert s["settled_count"] == 2
+    assert s["pending_count"] == 1
+    assert s["won"] == 1
+    assert s["settled_stake"] == 150.0
+    assert s["settled_pnl"] == 250.0                       # 待结 pnl=null 不计入
+    assert s["settled_roi"] == round(250.0 / 150.0, 4)
+    assert s["pending_stake"] == 70.0                       # 待结按投注额记
+    assert len(s["rows"]) == 3
+    # by_person: A 在前(settled_pnl 250), B 在后(0.0)
+    bp = s["by_person"]
+    assert [p["who"] for p in bp] == ["A", "B"]
+    a, b = bp
+    assert a == {
+        "who": "A", "tickets": 2, "settled": 2, "pending": 0, "won": 1,
+        "stake": 150.0, "settled_stake": 150.0, "settled_pnl": 250.0,
+        "settled_roi": round(250.0 / 150.0, 4), "pending_stake": 0.0,
+    }
+    assert b == {
+        "who": "B", "tickets": 1, "settled": 0, "pending": 1, "won": 0,
+        "stake": 70.0, "settled_stake": 0.0, "settled_pnl": 0.0,
+        "settled_roi": 0.0, "pending_stake": 70.0,
+    }
+
+
+def test_build_summary_tickets_sort_tiebreak():
+    # 同 settled_pnl 时按 who 升序
+    sample = {"recommendations": [], "tickets": [
+        {"date": "d", "who": "Z", "type": "t", "stake": 10, "legs_hit": "x", "pnl": 0.0, "settled": True},
+        {"date": "d", "who": "A", "type": "t", "stake": 10, "legs_hit": "x", "pnl": 0.0, "settled": True},
+    ]}
+    bp = build_summary(sample)["tickets"]["by_person"]
+    assert [p["who"] for p in bp] == ["A", "Z"]
 
 
 def test_build_summary_empty():
     s = build_summary({"recommendations": [], "tickets": []})
     assert s["recommendations"]["hit_rate"] == 0.0
     assert s["recommendations"]["hypo_unit_pnl"] == 0.0
-    assert s["tickets"]["roi"] == 0.0
     assert s["tickets"]["count"] == 0
+    assert s["tickets"]["settled_pnl"] == 0.0
+    assert s["tickets"]["settled_roi"] == 0.0
+    assert s["tickets"]["by_person"] == []
 
 
-def test_full_ledger_summary_matches_hand_count():
-    """跑真数据(Task 1 的 17 条/6 张), 锚定手算结果。"""
+def test_full_ledger_recommendations_matches_hand_count():
+    """推荐腿段跑真数据, 锚定手算(本任务保持不变)。"""
     from backend.bet_stats import load_ledger
-    s = build_summary(load_ledger(str(REPO / "data")))
-    assert s["recommendations"]["settled"] == 14
-    assert s["recommendations"]["win"] == 7
-    assert s["recommendations"]["hit_rate"] == 0.5
-    assert s["recommendations"]["by_tier"]["green"] == {"total": 0, "win": 0}
-    assert s["recommendations"]["by_tier"]["yellow"] == {"total": 4, "win": 2}
-    assert s["recommendations"]["by_tier"]["red"] == {"total": 10, "win": 5}
-    assert s["recommendations"]["hypo_unit_pnl"] == 6.51
-    assert s["tickets"]["total_pnl"] == -292
-    assert s["tickets"]["roi"] == -1.0
+    s = build_summary(load_ledger(str(REPO / "data")))["recommendations"]
+    assert s["settled"] == 14
+    assert s["win"] == 7
+    assert s["hit_rate"] == 0.5
+    assert s["by_tier"]["green"] == {"total": 0, "win": 0}
+    assert s["by_tier"]["yellow"] == {"total": 4, "win": 2}
+    assert s["by_tier"]["red"] == {"total": 10, "win": 5}
+    assert s["hypo_unit_pnl"] == 6.51
+
+
+def test_full_ledger_tickets_global():
+    """实购票全局聚合跑真数据, 锚定手算(待结/已结拆分)。"""
+    from backend.bet_stats import load_ledger
+    s = build_summary(load_ledger(str(REPO / "data")))["tickets"]
+    assert s["count"] == 42
+    assert s["settled_count"] == 29
+    assert s["pending_count"] == 13
+    assert s["won"] == 6
+    assert s["settled_stake"] == 2376
+    assert s["settled_pnl"] == 882.88
+    assert s["settled_roi"] == round(882.88 / 2376, 4)
+    assert s["pending_stake"] == 1190
+
+
+def test_full_ledger_tickets_by_person():
+    """by_person 跑真数据: 顺序 + 每人数值锚定。"""
+    from backend.bet_stats import load_ledger
+    bp = build_summary(load_ledger(str(REPO / "data")))["tickets"]["by_person"]
+    assert [p["who"] for p in bp] == ["你", "LYZ", "YBB", "ZFW", "LYH"]
+    by = {p["who"]: p for p in bp}
+    # 你
+    assert by["你"]["settled_pnl"] == 833.02
+    assert by["你"]["settled"] == 15
+    assert by["你"]["pending"] == 3
+    assert by["你"]["won"] == 5
+    assert by["你"]["settled_stake"] == 1706
+    assert by["你"]["pending_stake"] == 634
+    # LYZ
+    assert by["LYZ"]["settled_pnl"] == 584.43
+    assert by["LYZ"]["settled"] == 1
+    assert by["LYZ"]["pending"] == 2
+    assert by["LYZ"]["won"] == 1
+    assert by["LYZ"]["settled_stake"] == 114
+    assert by["LYZ"]["pending_stake"] == 206
+    # YBB(仅待结)
+    assert by["YBB"]["settled_pnl"] == 0.0
+    assert by["YBB"]["settled"] == 0
+    assert by["YBB"]["pending"] == 1
+    assert by["YBB"]["won"] == 0
+    assert by["YBB"]["pending_stake"] == 70
+    # ZFW
+    assert by["ZFW"]["settled_pnl"] == -252.57
+    assert by["ZFW"]["settled"] == 4
+    assert by["ZFW"]["pending"] == 2
+    assert by["ZFW"]["settled_stake"] == 274
+    # LYH
+    assert by["LYH"]["settled_pnl"] == -282.0
+    assert by["LYH"]["settled"] == 9
+    assert by["LYH"]["settled_stake"] == 282
 
 
 def test_ledger_record_schema():
-    """Task-1 reviewer 加固: 真台账每条记录的键集合 + 类型守卫。"""
+    """真台账每条记录键集合 + 类型守卫(tickets pnl 可 null, who ∈ 人名集)。"""
     from backend.bet_stats import load_ledger
     led = load_ledger(str(REPO / "data"))
     rec_keys = {"date", "match", "leg", "odds", "tier", "value_poly", "result", "settled"}
@@ -102,9 +202,11 @@ def test_ledger_record_schema():
         assert r["result"] in {"win", "loss", "pending"}
         assert isinstance(r["settled"], bool)
     tix_keys = {"date", "who", "type", "stake", "legs_hit", "pnl", "settled"}
+    people = set(led["people"])
     for t in led["tickets"]:
         assert set(t.keys()) == tix_keys
         assert isinstance(t["stake"], (int, float))
-        assert isinstance(t["pnl"], (int, float))
+        assert t["pnl"] is None or isinstance(t["pnl"], (int, float))
         assert isinstance(t["legs_hit"], str)
         assert isinstance(t["settled"], bool)
+        assert t["who"] in people

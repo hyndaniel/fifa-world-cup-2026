@@ -333,9 +333,10 @@ def test_bets_summary_ok(client):
     assert r.status_code == 200
     body = r.json()
     assert "recommendations" in body and "tickets" in body
-    # 默认 data_dir="data" → 真台账: green=0, 票 -292
+    # 默认 data_dir="data" → 真台账: green=0, 已结净 +882.88, 榜首是「你」
     assert body["recommendations"]["by_tier"]["green"]["total"] == 0
-    assert body["tickets"]["total_pnl"] == -292
+    assert body["tickets"]["settled_pnl"] == 882.88
+    assert body["tickets"]["by_person"][0]["who"] == "你"
 
 
 def test_bets_summary_missing_file_is_empty(tmp_path):
@@ -345,7 +346,10 @@ def test_bets_summary_missing_file_is_empty(tmp_path):
     c = TestClient(app)
     r = c.get("/api/bets/summary")
     assert r.status_code == 200
-    assert r.json()["tickets"]["count"] == 0
+    body = r.json()
+    assert body["tickets"]["count"] == 0
+    assert body["tickets"]["settled_pnl"] == 0.0
+    assert body["tickets"]["by_person"] == []
 
 
 def test_auth_enforced_when_password_set(tmp_path):
