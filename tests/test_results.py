@@ -238,3 +238,72 @@ def test_http_get_json_proxy_selection_and_utf8_decode(monkeypatch):
     proxies = captured["handlers"][0].proxies
     assert proxies.get("http") == "http://127.0.0.1:7897"
     assert proxies.get("https") == "http://127.0.0.1:7897"
+
+
+# --- _http_get_json_retry: DNS/连接瞬时错重试,HTTP 状态错不重试 ---
+import pytest                                                    # noqa: E402
+import backend.results as R                                      # noqa: E402
+from urllib.error import HTTPError, URLError                     # noqa: E402
+
+
+def test_http_get_retry_succeeds_after_transient(monkeypatch):
+    # 前两次 DNS 失败、第三次成功 → 返回结果,退避两次(launchd 偶发 DNS 自愈)
+    calls = {"n": 0}
+
+    def flaky(*a, **k):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise URLError("[Errno 8] nodename nor servname provided, or not known")
+        return {"ok": True}
+    sleeps = []
+    monkeypatch.setattr(R, "_http_get_json", flaky)
+    monkeypatch.setattr(R.time, "sleep", lambda s: sleeps.append(s))
+    out = R._http_get_json_retry("u", {}, None, 1.0, retries=3, backoff=2.0)
+    assert out == {"ok": True}
+    assert calls["n"] == 3
+    assert sleeps == [2.0, 4.0]                  # 指数退避
+
+
+def test_http_get_retry_does_not_retry_http_error(monkeypatch):
+    # 4xx/5xx(如 WAF 403)重试无益 → 立即上抛,不退避
+    calls = {"n": 0}
+
+    def boom(*a, **k):
+        calls["n"] += 1
+        raise HTTPError("u", 403, "Forbidden", {}, None)
+    monkeypatch.setattr(R, "_http_get_json", boom)
+    monkeypatch.setattr(R.time, "sleep",
+                        lambda s: pytest.fail("HTTPError 不应触发退避"))
+    with pytest.raises(HTTPError):
+        R._http_get_json_retry("u", {}, None, 1.0, retries=3)
+    assert calls["n"] == 1
+
+
+def test_http_get_retry_exhausts_then_raises(monkeypatch):
+    # 始终 DNS 失败 → 用尽次数后抛最后一个错(main 仍按"抓取失败→rc=1"处理)
+    calls = {"n": 0}
+
+    def always(*a, **k):
+        calls["n"] += 1
+        raise URLError("dns down")
+    monkeypatch.setattr(R, "_http_get_json", always)
+    monkeypatch.setattr(R.time, "sleep", lambda s: None)
+    with pytest.raises(URLError):
+        R._http_get_json_retry("u", {}, None, 1.0, retries=3)
+    assert calls["n"] == 3                        # 试满 3 次
+
+
+def test_fetch_results_goes_through_retry(monkeypatch):
+    # 集成:fetch_results 经重试路径——首次 DNS 失败、重试成功 → 正常解析
+    seq = [URLError("dns"), {"value": {"matchResult": [
+        {"matchNumStr": "周四055", "sectionsNo999": "2:1", "matchResultStatus": "2"}]}}]
+
+    def flaky(*a, **k):
+        v = seq.pop(0)
+        if isinstance(v, Exception):
+            raise v
+        return v
+    monkeypatch.setattr(R, "_http_get_json", flaky)
+    monkeypatch.setattr(R.time, "sleep", lambda s: None)
+    rows = R.fetch_results()
+    assert len(rows) == 1 and rows[0].zucai_num == "周四055" and rows[0].finished

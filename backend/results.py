@@ -11,10 +11,17 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass
 from datetime import date, timedelta
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import ProxyHandler, Request, build_opener
+
+# 抓取重试默认值:launchd 启动早期偶发 DNS 失败(getaddrinfo "nodename nor
+# servname",见运维记忆),指数退避重试可自愈;HTTP 4xx/5xx 不在此列。
+DEFAULT_RETRIES = 3
+DEFAULT_BACKOFF = 2.0
 
 # 完赛标志: matchResultStatus 取此值才算已完赛已开奖。
 FINISHED_STATUS = "2"
@@ -89,6 +96,28 @@ def _http_get_json(url: str, headers: dict, proxy: str | None, timeout: float) -
         return json.loads(resp.read().decode("utf-8"))
 
 
+def _http_get_json_retry(url: str, headers: dict, proxy: str | None, timeout: float,
+                         retries: int = DEFAULT_RETRIES,
+                         backoff: float = DEFAULT_BACKOFF) -> dict:
+    """_http_get_json 外套指数退避重试,只救瞬时网络错(DNS/连接/超时)。
+
+    HTTPError(4xx/5xx,如 WAF 403)重试无益 → 立即上抛;URLError/超时/OSError
+    (含 getaddrinfo gaierror)退避后重试。退避 = backoff·2^attempt(2s,4s,…)。
+    用尽 retries 仍失败 → 抛最后一个错,交 backfill_results.main 按"抓取失败 → rc=1"处理。
+    """
+    last: Exception | None = None
+    for attempt in range(retries):
+        try:
+            return _http_get_json(url, headers, proxy, timeout)
+        except HTTPError:
+            raise                                  # 状态码错不重试
+        except (URLError, TimeoutError, OSError) as e:
+            last = e
+            if attempt < retries - 1:
+                time.sleep(backoff * (2 ** attempt))
+    raise last  # type: ignore[misc]
+
+
 def fetch_results(cfg: dict | None = None, timeout: float = 30.0) -> list[MatchResult]:
     """GET sporttery 开奖接口 → parse_results → list[MatchResult]。
 
@@ -126,5 +155,7 @@ def fetch_results(cfg: dict | None = None, timeout: float = 30.0) -> list[MatchR
         "matchPage": "1",
         "pcOrWap": "1",
     }
+    retries = int(rcfg.get("retries") or DEFAULT_RETRIES)
+    backoff = float(rcfg.get("backoff") or DEFAULT_BACKOFF)
     url = f"{api}?{urlencode(params)}"
-    return parse_results(_http_get_json(url, headers, proxy, timeout))
+    return parse_results(_http_get_json_retry(url, headers, proxy, timeout, retries, backoff))
