@@ -1,0 +1,30 @@
+{
+  "updated": "2026-06-29",
+  "recommendations": [
+    {"date": "2026-06-24", "match": "南非vs韩国", "leg": "主胜(南非)", "odds": 5.65, "tier": "yellow", "value_poly": 0.972, "result": "win", "settled": true},
+    {"date": "2026-06-24", "match": "波黑vs卡塔尔", "leg": "客胜(卡塔尔)", "odds": 3.32, "tier": "red", "value_poly": 0.81, "result": "loss", "settled": true},
+    {"date": "2026-06-24", "match": "捷克vs墨西哥", "leg": "主胜(捷克)", "odds": 3.55, "tier": "red", "value_poly": 0.90, "result": "loss", "settled": true},
+    {"date": "2026-06-26", "match": "日本vs瑞典", "leg": "平", "odds": 3.55, "tier": "yellow", "value_poly": 0.994, "result": "win", "settled": true},
+    {"date": "2026-06-26", "match": "厄瓜多尔vs德国", "leg": "平", "odds": 4.90, "tier": "yellow", "value_poly": 0.985, "result": "loss", "settled": true},
+    {"date": "2026-06-26", "match": "土耳其vs美国", "leg": "主胜(土耳其)", "odds": 3.75, "tier": "red", "value_poly": 0.953, "result": "win", "settled": true},
+    {"date": "2026-06-26", "match": "巴拉圭vs澳大利亚", "leg": "平", "odds": 2.20, "tier": "red", "value_poly": 0.931, "result": "win", "settled": true},
+    {"date": "2026-06-27", "match": "埃及vs伊朗", "leg": "平", "odds": 2.50, "tier": "red", "value_poly": 0.922, "result": "win", "settled": true},
+    {"date": "2026-06-27", "match": "佛得角vs沙特", "leg": "客胜(沙特)", "odds": 2.60, "tier": "red", "value_poly": 0.918, "result": "loss", "settled": true},
+    {"date": "2026-06-27", "match": "挪威vs法国", "leg": "客胜(法国)", "odds": 1.48, "tier": "red", "value_poly": 0.906, "result": "win", "settled": true},
+    {"date": "2026-06-27", "match": "乌拉圭vs西班牙", "leg": "客胜(西班牙)", "odds": 1.38, "tier": "red", "value_poly": 0.894, "result": "win", "settled": true},
+    {"date": "2026-06-28", "match": "刚果金vs乌兹别克", "leg": "平", "odds": 4.05, "tier": "yellow", "value_poly": 0.988, "result": "loss", "settled": true},
+    {"date": "2026-06-28", "match": "哥伦比亚vs葡萄牙", "leg": "哥伦比亚胜", "odds": 3.60, "tier": "red", "value_poly": 0.950, "result": "loss", "settled": true},
+    {"date": "2026-06-28", "match": "阿尔及利亚vs奥地利", "leg": "阿尔及利亚胜", "odds": 3.90, "tier": "red", "value_poly": 0.959, "result": "loss", "settled": true},
+    {"date": "2026-06-29", "match": "巴西vs日本", "leg": "主-1负(平或日本)", "odds": 2.26, "tier": "red", "value_poly": 0.967, "result": "pending", "settled": false},
+    {"date": "2026-06-29", "match": "德国vs巴拉圭", "leg": "主-1负(平或巴拉圭)", "odds": 3.44, "tier": "red", "value_poly": 0.932, "result": "pending", "settled": false},
+    {"date": "2026-06-29", "match": "荷兰vs摩洛哥", "leg": "主-1负(平或摩洛哥)", "odds": 1.66, "tier": "red", "value_poly": 0.958, "result": "pending", "settled": false}
+  ],
+  "tickets": [
+    {"date": "2026-06-24", "who": "楼主", "type": "比分6串1", "stake": 30, "legs_hit": "0/6", "pnl": -30, "settled": true},
+    {"date": "2026-06-24", "who": "楼主", "type": "胜负6串1", "stake": 30, "legs_hit": "2/6", "pnl": -30, "settled": true},
+    {"date": "2026-06-24", "who": "朋友A", "type": "半全场050(5组合)", "stake": 50, "legs_hit": "0组合", "pnl": -50, "settled": true},
+    {"date": "2026-06-24", "who": "朋友A", "type": "半全场049(4组合)", "stake": 40, "legs_hit": "0组合", "pnl": -40, "settled": true},
+    {"date": "2026-06-24", "who": "朋友B", "type": "4串1复式(6腿)", "stake": 82, "legs_hit": "2/6", "pnl": -82, "settled": true},
+    {"date": "2026-06-26", "who": "用户", "type": "6场3串1", "stake": 60, "legs_hit": "1/6", "pnl": -60, "settled": true}
+  ]
+}
