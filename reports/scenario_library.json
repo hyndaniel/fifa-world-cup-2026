@@ -3,15 +3,15 @@
     "name": "大热门被摆大巴逼平",
     "trigger": "强队 vs 龟缩弱旅,弱旅无出线压力/只想守",
     "effect": "平/0-0↑、进球↓",
-    "triggered": 0,
+    "triggered": 2,
     "hits": 0
   },
   {
     "name": "死亡橡皮擦轮换",
     "trigger": "已出线队大轮换",
     "effect": "冷门/平↑",
-    "triggered": 0,
-    "hits": 0
+    "triggered": 3,
+    "hits": 2
   },
   {
     "name": "默契平",
@@ -24,7 +24,7 @@
     "name": "生死战必有胜负",
     "trigger": "平=双亡,无平局动机",
     "effect": "平↓",
-    "triggered": 0,
+    "triggered": 1,
     "hits": 0
   },
   {

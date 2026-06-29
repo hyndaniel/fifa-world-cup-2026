@@ -44,3 +44,42 @@ def update_hit(path, name, hit):
 def hit_rate(scenario):
     t = scenario.get("triggered", 0)
     return round(scenario["hits"] / t, 3) if t else None
+
+
+def scenario_hit(name, home_goals, away_goals, market_fav=None):
+    """某剧本在一场实际结果里是否"命中"(其方向效果是否兑现)。机械判、确定性。
+
+    只靠 (主进球, 客进球[, 市场热门 outcome])。返回 True/False;无法判 → None
+    (未知剧本,或需要市场热门却没给)。None 表示"不计入统计",避免伪命中率。
+    market_fav: 市场基线 had argmax,∈{h,d,a};仅"爆冷"类剧本需要。
+    """
+    is_draw = home_goals == away_goals
+    if name in ("默契平", "大热门被摆大巴逼平"):
+        return is_draw                          # 效果"平↑" → 真打平=命中
+    if name == "生死战必有胜负":
+        return not is_draw                      # 效果"平↓" → 非平=命中
+    if name == "强队刷净胜球":
+        return (home_goals + away_goals) >= 3   # 效果"大球" → 大 2.5=命中
+    if name == "死亡橡皮擦轮换":                # 效果"冷门/平↑" → 平 或 爆冷
+        if is_draw:
+            return True
+        if market_fav is None:
+            return None                         # 非平又无市场热门 → 判不了爆冷
+        outcome = "h" if home_goals > away_goals else "a"
+        return outcome != market_fav            # 实际≠市场热门=爆冷=命中
+    return None                                 # 未知剧本不判
+
+
+def rebuild_hits(path, events):
+    """从种子全量重建剧本命中台账(幂等):先重置为 DEFAULT seed(计数归零),
+    再按 events 逐条 update_hit 累计。每次都从 seed 重建,故 launchd 每 5 分钟
+    重跑不会翻倍累计——与赛果回填的台账/跑分卡同为"确定性重生成"。
+
+    events: iterable of (scenario_name, hit_bool);不在库中的名字跳过。返回新库。
+    """
+    save_library(path, [dict(s) for s in DEFAULT_LIBRARY])   # 重置:triggered/hits→0
+    known = {s["name"] for s in DEFAULT_LIBRARY}
+    for name, hit in events:
+        if name in known:
+            update_hit(path, name, hit)
+    return load_library(path)
