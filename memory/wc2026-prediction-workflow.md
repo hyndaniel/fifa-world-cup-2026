@@ -7,12 +7,12 @@ metadata:
   originSessionId: 3fc5f91d-a53d-4386-8fb1-6d9a83047f4d
 ---
 
-项目核心任务:逐日向 `小组赛比分预测.md` 追加世界杯小组赛比分预测,赛前落盘,赛后回填实际比分。
+项目核心任务:逐日向 `agents/wc-score-v1__比分预测.md` 追加世界杯小组赛比分预测,赛前落盘,赛后回填实际比分。
 
 **Why:** 用户每天(或隔天)来让我预测下一两个比赛日,并回填已赛场次。流程和格式固定,不应每次重新发明。
 
 **How to apply:**
-1. 先读 `小组赛比分预测.md` 看进度,再 WebSearch 查实时盘口(英文搜 "X vs Y prediction odds 2026 World Cup + 日期")。
+1. 先读 `agents/wc-score-v1__比分预测.md` 看进度,再 WebSearch 查实时盘口(英文搜 "X vs Y prediction odds 2026 World Cup + 日期")。
 2. 三份先验报告(同目录):`fable-5-ultra-report.md`(自家模型,72 场胜平负概率全表)、`gpt-5-5-codex-deep-research-report.md`(胜平负概率表 + 赛程)、`gpt-5-5-web-deep-research-report.md`(赔率表 + 关键情报:伤停/后勤)。综合先验 + 实时盘口出比分。
 3. 表格列:比赛(带国旗 emoji)| 场地/开球(ET)| 预测比分(加粗)| 市场/盘口 | 依据 | 实际比分(留空待回填)。
 4. 每节结构:`## 日期(第 N 比赛日,M 场)` → 表格 → 风险点一段(点名冷门方向) → 来源行(markdown 链接 `·` 分隔)。节间 `---` 分隔。

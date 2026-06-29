@@ -177,7 +177,7 @@ def test_main_empty_db_selfheals_rc0(tmp_path, monkeypatch):
     db = str(tmp_path / "t.db")
     _empty_odds(db)                                    # 真链路里 odds_cache 总在(mech_tags 会查)
     card = tmp_path / "card.md"
-    monkeypatch.setattr(V, "DEFAULT_OUT", str(card))   # 防真 v2_report 覆写实机 reports/预测v2.md
+    monkeypatch.setattr(V, "DEFAULT_OUT", str(card))   # 防真 v2_report 覆写实机 reports/scoring/三方跑分卡.md
     monkeypatch.setattr(B, "fetch_results", lambda *a, **k: [])   # 无赛果
     rc = B.main(["--once", "--cache", db, "--tags-out", str(tmp_path / "ledger.md"),
                  "--wc-db", str(tmp_path / "nope.db"),

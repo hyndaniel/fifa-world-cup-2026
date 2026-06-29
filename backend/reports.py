@@ -71,12 +71,19 @@ def list_reports(reports_dir="reports"):
         return []
     times = _load_times(reports_dir)
     out = []
-    for p in sorted(base.glob("*.md")):
+    # 递归扫 reports/**/*.md (含 agents/scoring/intel 子目录), 但跳过下划线目录
+    # (_archive/_state 等非 live 留痕) —— §3 命名迁移: 子目录组织 + 子目录仍上看板。
+    for p in sorted(base.rglob("*.md")):
         if not p.is_file():
+            continue
+        rel = p.relative_to(base)
+        # 跳过任何下划线前缀目录下的文件 (_archive/_state)
+        if any(part.startswith("_") for part in rel.parts[:-1]):
             continue
         # 跳过点文件 (macOS AppleDouble "._*" 等隐藏文件, 非真报告且常非 UTF-8)
         if p.name.startswith("."):
             continue
+        # name = 文件名 stem (迁移后全局唯一), URL 安全且无斜杠 → 前端/路由不变
         name = p.stem
         title = name
         try:
@@ -104,15 +111,25 @@ def read_report(name, reports_dir="reports"):
     name = str(name)
     if name.endswith(".md"):
         name = name[:-3]
-    # 拒绝任何含路径分隔/穿越的标识
-    if name in ("", ".", "..") or "/" in name or "\\" in name or "\x00" in name:
+    # 拒绝任何含路径分隔/穿越/glob 元字符的标识 (name 是 stem, 不含子路径)
+    if (name in ("", ".", "..") or "/" in name or "\\" in name or "\x00" in name
+            or "*" in name or "?" in name or "[" in name):
         raise ValueError(f"invalid report name: {name!r}")
 
     base = pathlib.Path(reports_dir).resolve()
-    target = (base / f"{name}.md").resolve()
+    # 迁移后报告分布在 reports/{agents,scoring,intel}/ 子目录; name 仍是唯一 stem。
+    # 递归找 <name>.md, 跳过下划线目录 (_archive/_state), 比较 stem 精确匹配 (防 glob 注入)。
+    target = None
+    for p in base.rglob("*.md"):
+        rel = p.relative_to(base)
+        if any(part.startswith("_") for part in rel.parts[:-1]):
+            continue
+        if p.stem == name and p.is_file():
+            target = p.resolve()
+            break
+    if target is None:
+        raise FileNotFoundError(f"report not found: {name}")
     # 解析后仍须落在 base 内 (双保险防穿越)
     if base != target and base not in target.parents:
         raise ValueError(f"invalid report name: {name!r}")
-    if not target.is_file():
-        raise FileNotFoundError(f"report not found: {name}")
     return target.read_text(encoding="utf-8")

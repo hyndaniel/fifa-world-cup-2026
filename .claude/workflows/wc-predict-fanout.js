@@ -17,7 +17,7 @@ export const meta = {
 //      并行派出 ⇒ 派 v2 的时刻 v1 还没返回,v2 的 prompt 结构上不可能含 v1 输出。
 //   2. v2Prompt(m) 是入参 m 的**纯函数**——只读 m.v2_baseline + m.v2_factcard
 //      (主会话预计算的市场基线 + 中立事实卡),源里**没有任何 v1 字段**可引用。
-//   3. v1 的产出只落到 v1_predictions 表 + 小组赛比分预测.md;v2 只读 odds 缓存 + enrich
+//   3. v1 的产出只落到 v1_predictions 表 + agents/wc-score-v1__比分预测.md;v2 只读 odds 缓存 + enrich
 //      事实卡——两套存储不相交,v2 即便自查也碰不到 v1。三重隔离。
 //   wc-bet / wc-odds 是**下游**(综合三方的终点),不受 v1⊥v2 约束:bet 看 v1/v2/odds 合理。
 //
@@ -34,7 +34,7 @@ export const meta = {
 //   —— 主会话据此落库 + join 成 Decision + POST 看板(跑今天 第 4-7 步)。
 //
 // ⚠️ 已知局限(沿用现行为,本轮不在范围内):v1/v2 各自在 agent 内 Edit 共享 md 台账
-//   (小组赛比分预测.md / 盘口下注复盘.md),并行时理论上有写竞争。每日场次个位数、agent 耗时长,
+//   (agents/wc-score-v1__比分预测.md / agents/wc-bet__下注复盘.md),并行时理论上有写竞争。每日场次个位数、agent 耗时长,
 //   真碰撞概率低;DB 落库(record_v1/record_v2_prediction)是 keyed upsert、安全。
 //   未来要彻底消除可改为「agent 只 reason + 返回 ledger_row,主会话串行落 md」。
 // =============================================================================
@@ -129,7 +129,7 @@ const BET_SCHEMA = {
     verdict: { type: 'string', description: '一句决策结论(有无真价值/空仓最优/最不亏腿)' },
     best_leg: LEG,
     legs: { type: 'array', items: LEG },
-    persisted: { type: 'boolean', description: '是否已自维护 盘口下注复盘.md 当日行' },
+    persisted: { type: 'boolean', description: '是否已自维护 agents/wc-bet__下注复盘.md 当日行' },
   },
   required: ['match_key', 'verdict'],
 }
@@ -146,7 +146,7 @@ function v1Prompt(m) {
     `2) 比分预测**主-客顺序**(主队进球-客队进球)+ 自评胜平负 %(诚实标"自评")+ 主比分 + 2-3 备选。`,
     `3) 自落库(你自己跑 Bash):`,
     `   record_v1('.cache/odds_cache.db','${m.match_key}', {'h':..,'d':..,'a':..}, '主-客比分串')`,
-    `   并按你的体例把这场回灌 reports/小组赛比分预测.md(该 match_key 这一行)。`,
+    `   并按你的体例把这场回灌 reports/agents/wc-score-v1__比分预测.md(该 match_key 这一行)。`,
     ``,
     `你**可以**看盘口/首发/出线/赛前情报——那是你三层叠加(先验/盘口/首发微调)的正常输入,不受红线限制。`,
     `完成后**只返回**结构化 JSON(StructuredOutput);probs 为自评胜平负 %、score_pred 为主-客比分串、rationale 为一句依据。`,
@@ -188,7 +188,7 @@ function betPrompt(m, v1, v2, odds) {
   return [
     `你是 wc-bet(下注决策层·综合三方的终点)。为 match_key=${m.match_key}(${m.home_cn} vs ${m.away_cn})做价值决策。`,
     `算 value = 竞彩欧赔 × Poly去水(p_true),EV% = (value-1)×100,分档 🟢green≥1.03 / 🟡yellow0.97-1.03 / 🔴red<0.97(明显-EV)/ ⚪skip(陷阱桶或缺对应 Poly 线)。选"最不亏"那条腿,讲结算/陷阱。`,
-    `自落库(你自己跑):维护 reports/盘口下注复盘.md 当日行(赛前推荐,实际列留待回填)。`,
+    `自落库(你自己跑):维护 reports/agents/wc-bet__下注复盘.md 当日行(赛前推荐,实际列留待回填)。`,
     `诚实定位:足彩长期 -EV,多数选项红档是常态,别粉饰;全场无真价值 → verdict 首句写"无真价值,空仓最优"。`,
     ``,
     `综合下列三方(它们已各自独立产出完毕,你在下游看它们合理):`,
