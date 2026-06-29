@@ -6,7 +6,8 @@
 
 ## 1. 背景与问题
 
-下注台账 `reports/盘口下注复盘.md` 由 wc-bet（下注决策层）手维护，记录了本届世界杯
+下注台账 `reports/agents/wc-bet__下注复盘.md`（§3 命名迁移后的现路径，旧名
+`reports/盘口下注复盘.md` 已废）由 wc-bet（下注决策层）手维护，记录了本届世界杯
 6 个比赛日（6.24→6.29）的全部推荐腿与实购票：每条腿的赔率/分档/value、✅/❌ 命中、
 每日复盘统计、实购票的注码与实际盈亏。
 
@@ -142,7 +143,7 @@ frontend/app.js         ← renderBetStats() 渲染「📒 下注统计」区（
 
 ## 8. 维护（going forward）
 
-wc-bet 每天落盘 `reports/盘口下注复盘.md` 后，顺手往 `data/bet_ledger.json` 追加当日
+wc-bet 每天落盘 `reports/agents/wc-bet__下注复盘.md` 后，顺手往 `data/bet_ledger.json` 追加当日
 推荐腿（赛前 `settled:false`，赛后回填 `result`）。把这条写进 wc-bet 的台账约定
 （`.claude/agents/wc-bet.md` §维护台账，属用户授权范围）。
 
