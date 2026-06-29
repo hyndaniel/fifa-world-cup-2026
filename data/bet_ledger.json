@@ -331,9 +331,9 @@
       "who": "你",
       "type": "混合8串1(061-073)",
       "stake": 20,
-      "legs_hit": "待结",
-      "pnl": null,
-      "settled": false
+      "legs_hit": "066新让胜挂·全损",
+      "pnl": -20,
+      "settled": true
     },
     {
       "date": "2026-06-28",
@@ -520,27 +520,27 @@
       "who": "LYH",
       "type": "胜平负单关(073)",
       "stake": 20,
-      "legs_hit": "待结",
-      "pnl": null,
-      "settled": false
+      "legs_hit": "0-1负·选胜/平挂",
+      "pnl": -20,
+      "settled": true
     },
     {
       "date": "2026-06-29",
       "who": "LYH",
       "type": "半全场单关(073)",
       "stake": 36,
-      "legs_hit": "待结",
-      "pnl": null,
-      "settled": false
+      "legs_hit": "平负·未选",
+      "pnl": -36,
+      "settled": true
     },
     {
       "date": "2026-06-29",
       "who": "LYH",
       "type": "比分单关(073)",
       "stake": 28,
-      "legs_hit": "待结",
-      "pnl": null,
-      "settled": false
+      "legs_hit": "0-1·未选",
+      "pnl": -28,
+      "settled": true
     },
     {
       "date": "2026-06-30",
