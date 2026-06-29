@@ -71,7 +71,8 @@ def test_main_fetch_failure_returns_1(tmp_path, monkeypatch, capsys):
     calls = []
     monkeypatch.setattr(B, "_rerun_scorecard", lambda cache: calls.append(cache))
     rc = B.main(["--once", "--cache", str(tmp_path / "t.db"),
-                 "--tags-out", str(tmp_path / "ledger.md")])
+                 "--tags-out", str(tmp_path / "ledger.md"),
+                 "--scenario-lib", str(tmp_path / "s.json")])
     assert rc == 1
     assert "失败" in capsys.readouterr().err
     assert calls == []                                # fetch 炸了不重跑跑分卡
@@ -89,7 +90,8 @@ def test_main_rerun_failure_returns_1_but_keeps_record(tmp_path, monkeypatch, ca
     def _boom(cache):
         raise RuntimeError("跑分卡炸了")
     monkeypatch.setattr(B, "_rerun_scorecard", _boom)
-    rc = B.main(["--once", "--cache", db, "--tags-out", str(out)])
+    rc = B.main(["--once", "--cache", db, "--tags-out", str(out),
+                 "--scenario-lib", str(tmp_path / "s.json")])
     assert rc == 1
     assert "失败" in capsys.readouterr().err
     # record 已落库
@@ -240,3 +242,59 @@ def test_main_wires_scenario_rebuild(tmp_path, monkeypatch):
                  "--scenario-lib", str(tmp_path / "s.json")])
     assert rc == 0
     assert calls == [(db, str(tmp_path / "s.json"))]
+
+
+def test_rebuild_scenario_hits_empty_baseline_no_crash(tmp_path):
+    # 承重墙:某场 had 赔率全 null(部分抓取)→ baseline_market 返回 truthy 但 baseline={}。
+    # rebuild 不能因 max({}) 崩(否则回填每5分钟 rc=1、剧本台账冻住)。fav 退化为 None,
+    # 不需热门的剧本(默契平=真打平)仍正常计;需热门的剧本(橡皮擦)非平则跳过。
+    from backend.v2_predict import build_v2_prediction, record_v2_prediction
+    from backend.baseline import HAD_CFG, baseline_market
+    db = str(tmp_path / "t.db")
+    mk = "周三053"
+    conn = sqlite3.connect(db)
+    conn.execute("""CREATE TABLE odds_cache (id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts TEXT, source TEXT, match_key TEXT, label TEXT, ko TEXT, payload_json TEXT)""")
+    conn.execute("INSERT INTO odds_cache(ts,source,match_key,label,ko,payload_json) "
+                 "VALUES (?,?,?,?,?,?)",
+                 ("2026-06-25T09:00:00+08:00", "zucai", mk, "x vs y", "ko",
+                  json.dumps({"had": {"h": None, "d": None, "a": None}})))
+    conn.commit()
+    conn.close()
+    B.backfill(db, [MatchResult(mk, 1, 1, True)])            # 打平
+    bl = baseline_market(db, mk, HAD_CFG)
+    assert bl and bl["baseline"] == {}                       # 复现:truthy 但空 baseline
+    # v2 标了两个剧本:默契平(不需热门)+ 死亡橡皮擦轮换(需热门)
+    pred = build_v2_prediction(mk, "乱", ["默契平", "死亡橡皮擦轮换"],
+                               {"had": {"baseline": {"h": 33, "d": 34, "a": 33},
+                                        "deviations": []}})
+    record_v2_prediction(db, mk, pred)
+
+    lib_path = str(tmp_path / "scen.json")
+    B.rebuild_scenario_hits(db, lib_path)                    # 不得抛 ValueError
+    lib = {s["name"]: s for s in json.load(open(lib_path, encoding="utf-8"))}
+    assert lib["默契平"]["triggered"] == 1 and lib["默契平"]["hits"] == 1   # 打平→命中
+    assert lib["死亡橡皮擦轮换"]["triggered"] == 1                          # 打平→记为命中(平也算)
+
+
+def test_main_scenario_rebuild_failure_returns_1_but_keeps_record(tmp_path, monkeypatch, capsys):
+    # 剧本台账重建抛异常 → rc=1 + stderr,但前面已成功的 record/台账/跑分卡不被吞。
+    # 锚住:rebuild_scenario_hits 在同一自愈 try 块、失败也走统一错误契约。
+    db = str(tmp_path / "t.db")
+    _empty_odds(db)
+    monkeypatch.setattr(B, "fetch_results",
+                        lambda *a, **k: [MatchResult("周四055", 2, 0, True)])
+    monkeypatch.setattr(B, "_rerun_scorecard", lambda *a, **k: None)
+
+    def _boom(*a, **k):
+        raise RuntimeError("剧本台账炸了")
+    monkeypatch.setattr(B, "rebuild_scenario_hits", _boom)
+    rc = B.main(["--once", "--cache", db, "--tags-out", str(tmp_path / "ledger.md"),
+                 "--scenario-lib", str(tmp_path / "s.json")])
+    assert rc == 1
+    assert "失败" in capsys.readouterr().err
+    conn = sqlite3.connect(db)                          # record 仍落库,未被吞
+    n = conn.execute("SELECT COUNT(*) FROM match_results WHERE match_key=?",
+                     ("周四055",)).fetchone()[0]
+    conn.close()
+    assert n == 1

@@ -132,7 +132,9 @@ def rebuild_scenario_hits(cache_path: str, lib_out: str = DEFAULT_SCENARIO_LIB) 
         if not names:
             continue
         bl = baseline_market(cache_path, mk, HAD_CFG)
-        fav = max(bl["baseline"], key=bl["baseline"].get) if bl else None
+        # baseline_market 可能返回 truthy 但 baseline={}(某场 had 赔率全 null/部分抓取),
+        # 故须显式判空,否则 max({}) 抛 ValueError → 回填每5分钟 rc=1、剧本台账冻住。
+        fav = max(bl["baseline"], key=bl["baseline"].get) if (bl and bl["baseline"]) else None
         for name in names:
             hit = scenario_hit(name, hg, ag, fav)
             if hit is None:
