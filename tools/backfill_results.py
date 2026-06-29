@@ -18,12 +18,15 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from backend.results import MatchResult, fetch_results  # noqa: E402
-from backend.baseline import get_result_goals, record_result  # noqa: E402
+from backend.baseline import HAD_CFG, baseline_market, get_result_goals, record_result  # noqa: E402
 from backend.mech_tag import mech_tags  # noqa: E402
+from backend.scenarios import rebuild_hits, scenario_hit  # noqa: E402
+from backend.v2_predict import get_v2_prediction  # noqa: E402
 
 DEFAULT_CACHE = str(REPO / ".cache" / "odds_cache.db")
 DEFAULT_TAGS_OUT = str(REPO / "reports" / "复盘对错标.md")
 DEFAULT_WC_DB = str(REPO / "data" / "wc.db")
+DEFAULT_SCENARIO_LIB = str(REPO / "reports" / "scenario_library.json")
 
 _RESULTS_SCHEMA = (
     "CREATE TABLE IF NOT EXISTS match_results (match_key TEXT PRIMARY KEY, "
@@ -101,6 +104,45 @@ def render_mech_tags(cache_path: str, out_path: str, wc_db_path: str = DEFAULT_W
     p.write_text("".join(lines), encoding="utf-8")
 
 
+def _scenario_names(v2rec) -> list:
+    """v2 记录里贴的剧本名(scenarios 可为字符串或 {name:..} dict)。"""
+    scen = (v2rec or {}).get("scenarios") or []
+    return [s.get("name") if isinstance(s, dict) else s for s in scen]
+
+
+def rebuild_scenario_hits(cache_path: str, lib_out: str = DEFAULT_SCENARIO_LIB) -> None:
+    """从 match_results × v2 剧本标签全量重建剧本命中台账(确定性、自愈,同台账/跑分卡)。
+
+    每场:取实际比分 + v2 贴的剧本 + 市场 had 热门 → scenario_hit 机械判命中 →
+    rebuild_hits 从种子重建(幂等,每 5 分钟重跑不翻倍)。无 v2 标签的场不贡献事件。
+    """
+    conn = sqlite3.connect(cache_path)
+    try:
+        conn.execute(_RESULTS_SCHEMA)  # 防御:从未录过赛果时表不存在
+        keys = [r[0] for r in conn.execute("SELECT match_key FROM match_results").fetchall()]
+    finally:
+        conn.close()
+    events = []
+    for mk in keys:
+        goals = get_result_goals(cache_path, mk)
+        if not goals:
+            continue
+        hg, ag = goals
+        names = _scenario_names(get_v2_prediction(cache_path, mk))
+        if not names:
+            continue
+        bl = baseline_market(cache_path, mk, HAD_CFG)
+        # baseline_market 可能返回 truthy 但 baseline={}(某场 had 赔率全 null/部分抓取),
+        # 故须显式判空,否则 max({}) 抛 ValueError → 回填每5分钟 rc=1、剧本台账冻住。
+        fav = max(bl["baseline"], key=bl["baseline"].get) if (bl and bl["baseline"]) else None
+        for name in names:
+            hit = scenario_hit(name, hg, ag, fav)
+            if hit is None:
+                continue
+            events.append((name, hit))
+    rebuild_hits(lib_out, events)
+
+
 def _rerun_scorecard(cache_path: str) -> None:
     """重跑 v2 跑分卡。v2_report.main() 不收 argv 而读 sys.argv,故临时改写 argv,
     把刚回填的同一个 cache 透传过去(否则它会读自己的默认库,与本次回填脱节)。"""
@@ -123,6 +165,8 @@ def main(argv=None) -> int:
     ap.add_argument("--cache", default=DEFAULT_CACHE)
     ap.add_argument("--tags-out", default=DEFAULT_TAGS_OUT)
     ap.add_argument("--wc-db", default=DEFAULT_WC_DB, help="队名来源(wc.db matches)")
+    ap.add_argument("--scenario-lib", default=DEFAULT_SCENARIO_LIB,
+                    help="剧本命中台账输出(从 v2 标签×赛果全量重建)")
     args = ap.parse_args(argv)
 
     try:
@@ -140,7 +184,8 @@ def main(argv=None) -> int:
     try:
         render_mech_tags(args.cache, args.tags_out, args.wc_db)
         _rerun_scorecard(args.cache)
-    except Exception as e:  # noqa: BLE001 重生成台账/重跑跑分卡任何失败都 signal 1
+        rebuild_scenario_hits(args.cache, args.scenario_lib)
+    except Exception as e:  # noqa: BLE001 重生成台账/跑分卡/剧本台账任何失败都 signal 1
         print(f"[backfill] 重生成台账/跑分卡失败: {e}", file=sys.stderr)
         return 1
     return 0
