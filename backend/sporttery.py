@@ -13,7 +13,9 @@
 """
 from __future__ import annotations
 
-import httpx
+import json
+import urllib.parse
+import urllib.request
 
 from .models import ZucaiMatch
 
@@ -44,10 +46,37 @@ def fetch(cfg: dict, timeout: float = 30.0) -> dict:
         "Accept": "application/json",
     }
     params = {"poolCode": pools, "channel": "c"}
-    client_kwargs: dict = {"timeout": timeout}
+
+    # socks5 代理 urllib 不支持;仅此情形惰性回退 httpx(海外机房住宅出口场景)。
+    # 直连 / http(s) 代理走纯 stdlib，故 /usr/bin/python3 (无 httpx) 也能跑。
+    if proxy and proxy.lower().startswith("socks"):
+        return _fetch_via_httpx(api, params, headers, proxy, timeout)
+
+    url = api + ("&" if "?" in api else "?") + urllib.parse.urlencode(params)
+    req = urllib.request.Request(url, headers=headers, method="GET")
     if proxy:
-        client_kwargs["proxy"] = proxy
-    with httpx.Client(**client_kwargs) as client:
+        opener = urllib.request.build_opener(
+            urllib.request.ProxyHandler({"http": proxy, "https": proxy})
+        )
+    else:
+        # 空映射 → 忽略环境 HTTP(S)_PROXY，保持直连;仅足彩走 [zucai] 代理。
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    # urlopen 对 4xx/5xx 抛 HTTPError，等价于 httpx 的 raise_for_status。
+    with opener.open(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _fetch_via_httpx(api: str, params: dict, headers: dict, proxy: str,
+                     timeout: float) -> dict:
+    """socks5 代理路径:惰性 import httpx(stdlib 不支持 socks)。"""
+    try:
+        import httpx
+    except ModuleNotFoundError as e:  # pragma: no cover - 取决于运行环境
+        raise RuntimeError(
+            "[zucai] proxy 配了 socks5，但本环境无 httpx;"
+            "请改用 http(s) 代理或直连，或安装 httpx[socks]。"
+        ) from e
+    with httpx.Client(timeout=timeout, proxy=proxy) as client:
         resp = client.get(api, params=params, headers=headers)
         resp.raise_for_status()
         return resp.json()

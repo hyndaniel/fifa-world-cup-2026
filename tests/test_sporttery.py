@@ -8,6 +8,7 @@
 import json
 import pathlib
 
+from backend import sporttery
 from backend.sporttery import parse_matches
 
 FIXTURE = pathlib.Path(__file__).parent / "fixtures" / "zucai_sample.json"
@@ -52,3 +53,42 @@ def test_parse_count_and_fields():
         assert m.zucai_num and m.home_cn and m.away_cn
         assert m.ko_bj  # 拼了 matchDate + matchTime
         assert isinstance(m.ttg, dict)
+
+
+class _FakeResp:
+    def __init__(self, body: bytes):
+        self._body = body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def read(self):
+        return self._body
+
+
+def test_fetch_stdlib_no_httpx(monkeypatch):
+    """直连 fetch 走纯 stdlib:不 import httpx，正确拼 query + headers + 解析 JSON。"""
+    captured = {}
+
+    class _FakeOpener:
+        def open(self, req, timeout=None):
+            captured["url"] = req.full_url
+            captured["headers"] = dict(req.headers)
+            captured["timeout"] = timeout
+            return _FakeResp(b'{"value": {"matchInfoList": []}}')
+
+    monkeypatch.setattr(
+        sporttery.urllib.request, "build_opener", lambda *a, **k: _FakeOpener()
+    )
+    out = sporttery.fetch({}, timeout=12.0)
+
+    assert out == {"value": {"matchInfoList": []}}
+    assert captured["timeout"] == 12.0
+    assert "poolCode=had%2Chhad%2Cttg" in captured["url"]
+    assert "channel=c" in captured["url"]
+    # urllib 把 header 键首字母大写余小写:User-Agent → User-agent
+    assert captured["headers"]["User-agent"].startswith("Mozilla")
+    assert captured["headers"]["Referer"] == "https://m.sporttery.cn/"
