@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""渲染 v2 跑分卡 → reports/预测v2.md。
+"""渲染三方跑分卡 → reports/scoring/三方跑分卡.md。
 
-用法: python3 tools/v2_report.py [--cache .cache/odds_cache.db] [--out reports/预测v2.md]
+(报告正名: 它量 v1/v2/市场 三方 Brier, 非 v2 独有 —— §3 命名迁移正名自 reports/预测v2.md。)
+用法: python3 tools/v2_report.py [--cache .cache/odds_cache.db] [--out reports/scoring/三方跑分卡.md]
 """
 import argparse
 import os
@@ -21,7 +22,7 @@ from backend.v1_log import get_v1  # noqa: E402
 MARKET_NAMES = {"had": "胜平负", "hhad": "让球", "ttg": "总进球/大小球"}
 
 DEFAULT_CACHE = os.environ.get("WC_ODDS_CACHE", os.path.join(REPO, ".cache", "odds_cache.db"))
-DEFAULT_OUT = os.path.join(REPO, "reports", "预测v2.md")
+DEFAULT_OUT = os.path.join(REPO, "reports", "scoring", "三方跑分卡.md")
 DEFAULT_WC_DB = os.path.join(REPO, "data", "wc.db")
 
 
@@ -159,7 +160,7 @@ def _calibration_lines(calib, n=5):
 
 
 def render(collected, audits, score_rows=None, matchdays=None, calib=None):
-    lines = ["# 预测 v2 跑分卡(全盘口)", ""]
+    lines = ["# 三方跑分卡(全盘口)", ""]
     for market, _ in MARKETS:
         data = collected[market]
         agg = aggregate([{"v1": p["brier"]["v1"], "v2": p["brier"]["v2"],

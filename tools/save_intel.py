@@ -2,7 +2,7 @@
 """把 deep-search 抽出的确证事实写进 enrich 表, 供 wc-prob-v2 的 match_fact_card 读取。
 
 设计 (B2 共享情报层 · v2 那条):
-- 上游 `/deep-research` → reports/deep-search-*.md (中立赛前情报)。
+- 上游 `/deep-research` → reports/intel/*赛前情报*.md (中立赛前情报, §3 迁移自 reports/deep-search-*.md)。
 - 一个 LLM 抽取步把每队的 ✅确证 停赛/伤停/官宣轮换 抽成 JSON (本脚本的输入),
   只留确证事实, 剥掉出线形势/动机/叙事 (那些给 v1 / odds-analyst, 不进 v2)。
 - 本脚本把每条事实当一条 "news" 写进 enrich.news_json:

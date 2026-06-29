@@ -2,7 +2,9 @@
 import json
 import os
 
-from backend.reports import list_reports
+import pytest
+
+from backend.reports import list_reports, read_report
 
 
 def test_orders_by_manifest_when_mtimes_equal(tmp_path):
@@ -38,10 +40,10 @@ def test_manifest_file_not_listed_as_report(tmp_path):
     assert names == ["r"]
 
 
-def test_subdir_md_excluded_from_list(tmp_path):
-    """_archive/ _state/ 子目录里的 .md 不进看板列表(glob('*.md') 非递归)。
+def test_underscore_subdir_md_excluded_from_list(tmp_path):
+    """_archive/ _state/ (下划线前缀目录) 里的 .md 不进看板列表。
 
-    锚住 §3.1 报告迁移的物理前提:把死报告 git mv 进 reports/_archive/ 即从 /reports 列表消失。
+    §3 命名迁移: glob 改递归后, 仍须把死报告/机器态 (_archive/_state) 挡在看板外。
     """
     (tmp_path / "live.md").write_text("# LIVE\n", encoding="utf-8")
     (tmp_path / "_archive").mkdir()
@@ -49,4 +51,37 @@ def test_subdir_md_excluded_from_list(tmp_path):
     (tmp_path / "_state").mkdir()
     (tmp_path / "_state" / "note.md").write_text("# NOTE\n", encoding="utf-8")
     names = [r["name"] for r in list_reports(str(tmp_path))]
-    assert names == ["live"]  # 仅根 .md;子目录内的 dead/note 被排除
+    assert names == ["live"]  # 根 .md 收;下划线目录内的 dead/note 排除
+
+
+def test_live_subdir_md_included_in_list(tmp_path):
+    """§3 命名迁移: agents/scoring/intel 等非下划线子目录的报告**要**上看板, name=stem。"""
+    (tmp_path / "agents").mkdir()
+    (tmp_path / "agents" / "wc-score-v1__比分预测.md").write_text("# 比分预测\n", encoding="utf-8")
+    (tmp_path / "scoring").mkdir()
+    (tmp_path / "scoring" / "三方跑分卡.md").write_text("# 三方跑分卡\n", encoding="utf-8")
+    (tmp_path / "_archive").mkdir()
+    (tmp_path / "_archive" / "dead.md").write_text("# DEAD\n", encoding="utf-8")
+    names = {r["name"] for r in list_reports(str(tmp_path))}
+    assert names == {"wc-score-v1__比分预测", "三方跑分卡"}  # 子目录 live 进、_archive 不进
+    titles = {r["title"] for r in list_reports(str(tmp_path))}
+    assert "三方跑分卡" in titles  # H1 标题正常解析(跨子目录)
+
+
+def test_read_report_resolves_subdir_by_stem(tmp_path):
+    """read_report 用 stem (无斜杠) 取到子目录里的报告 → 前端 URL/路由不变。"""
+    (tmp_path / "intel").mkdir()
+    (tmp_path / "intel" / "2026-06-29__赛前情报-R32.md").write_text("# 情报\n正文", encoding="utf-8")
+    assert "正文" in read_report("2026-06-29__赛前情报-R32", str(tmp_path))
+
+
+def test_read_report_rejects_traversal_and_glob(tmp_path):
+    """name 含斜杠/穿越/glob 元字符一律拒绝 (子目录改造后仍守边界)。"""
+    (tmp_path / "_archive").mkdir()
+    (tmp_path / "_archive" / "dead.md").write_text("# DEAD\n", encoding="utf-8")
+    for bad in ["../secret", "agents/x", "..", "*", "a?b", ""]:
+        with pytest.raises((ValueError, FileNotFoundError)):
+            read_report(bad, str(tmp_path))
+    # 下划线目录里的报告不可经 read_report 取出 (与列表口径一致)
+    with pytest.raises(FileNotFoundError):
+        read_report("dead", str(tmp_path))

@@ -35,7 +35,11 @@ def main(reports_dir="reports"):
         print(f"no such dir: {reports_dir}", file=sys.stderr)
         return 1
     times = {}
-    for p in sorted(base.glob("*.md")):
+    # 递归扫子目录 (agents/scoring/intel), 跳过下划线目录 (_archive/_state) —— 与 backend/reports.py 一致
+    for p in sorted(base.rglob("*.md")):
+        rel = p.relative_to(base)
+        if any(part.startswith("_") for part in rel.parts[:-1]):
+            continue
         if p.name.startswith("."):
             continue
         ts = git_ts(p)

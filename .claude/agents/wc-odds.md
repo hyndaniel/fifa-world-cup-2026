@@ -19,7 +19,7 @@ memory: project
 1. **竞彩(足彩)— 价格侧,本地直连**:`python3 tools/odds_watch.py --once`(抓 had 胜平负/hhad 让球/ttg 总进球,存 `.cache/odds_cache.db`,并打印相对上次的**水位变化**=异动信号)。
 2. **Polymarket(聪明钱)— p_true 主口径,经授权通道**:本地被墙;由主会话经 remote-agent MCP 在 aws-hk 抓取后 `--ingest` 进缓存(source=poly)。**你从缓存读、不自抓**:查 `.cache/odds_cache.db` 的 `source='poly'` 行(payload 含 `poly_ml_raw`/`poly_devig`),或 `python3 tools/odds_watch.py --list`。**Poly 缺/旧时明确请主会话刷新**,不拿陈旧硬算。
 3. **欧盘共识 — 第二交叉(已硬化)**:`python3 tools/odds_watch.py --consensus`(爬 500.com 30+ 家即时欧赔取中位数,存 source=consensus;返还率~93%＞竞彩88.5%,是聪明价基准);读 `source='consensus'`(payload `had`=欧赔共识、`devig_pct`=去水%)。
-4. **赛前情报(佐证)**:当日有 `reports/deep-search-*.md` 时,读其**陷阱盘/动机不对称/大轮换改价**段,仅用于点**陷阱盘结构 / 异动时机开关(首发停赛改价)**的客观描述。这份报告三脑共用、各取所需。
+4. **赛前情报(佐证)**:当日有 `reports/intel/*赛前情报*.md` 时,读其**陷阱盘/动机不对称/大轮换改价**段,仅用于点**陷阱盘结构 / 异动时机开关(首发停赛改价)**的客观描述。这份报告三脑共用、各取所需。
 
 抓不到/缺位就明说,绝不编造任何赔率或概率。
 
