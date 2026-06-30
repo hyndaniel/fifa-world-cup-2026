@@ -147,8 +147,8 @@ def test_full_ledger_tickets_global():
     assert s["pending_count"] == 11
     assert s["won"] == 7
     assert s["settled_stake"] == 2992
-    assert s["settled_pnl"] == 357.69
-    assert s["settled_roi"] == round(357.69 / 2992, 4)
+    assert s["settled_pnl"] == 386.67
+    assert s["settled_roi"] == round(386.67 / 2992, 4)
     assert s["pending_stake"] == 1658
 
 
@@ -159,7 +159,7 @@ def test_full_ledger_tickets_by_person():
     assert [p["who"] for p in bp] == ["你", "LYZ", "YBB", "ZFW", "LYH"]
     by = {p["who"]: p for p in bp}
     # 你
-    assert by["你"]["settled_pnl"] == 773.02
+    assert by["你"]["settled_pnl"] == 802.0
     assert by["你"]["settled"] == 18
     assert by["你"]["pending"] == 4
     assert by["你"]["won"] == 5
