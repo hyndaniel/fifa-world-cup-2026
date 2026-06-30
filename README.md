@@ -32,6 +32,7 @@ flowchart TB
     end
     ODDS_A["wc-odds · 盘口描述"]
     BET["wc-bet · 下注决策"]
+    SIM["sim 蒙卡 · 淘汰赛比分网格<br/>(市场同锚 · 不进跑分卡)"]
 
     DS -.->|读原文| V1
     DS -.->|陷阱盘/动机| ODDS_A
@@ -39,6 +40,8 @@ flowchart TB
     CACHE -->|"baseline_market 基线"| V2
     CACHE --> ODDS_A
     ODDS_A -->|共识/去水/异动| BET
+    ODDS_A -.->|"去水1X2+大小球(淘汰赛)"| SIM
+    SIM -.->|"热力图/晋级%/让球腿"| BET
     V1 --> BET
     V2 --> BET
 
