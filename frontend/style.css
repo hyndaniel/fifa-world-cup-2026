@@ -1145,7 +1145,7 @@ html[data-theme="amber"] {
 .sched-row .sr-chip{margin-left:auto;display:inline-flex;align-items:center;gap:5px;font-size:11px;
   padding:2px 7px;border-radius:99px;border:1px solid var(--frame);background:var(--ink-2);
   flex:0 1 auto;min-width:0;max-width:100%}
-.sched-row .sr-chip .sr-chip-desc{min-width:0;white-space:normal;text-align:left}
+.sched-row .sr-chip .sr-chip-desc{min-width:0;max-width:14em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left}
 .sched-row .sr-chip .ev-pos,.sched-row .sr-chip .ev-neg{flex:0 0 auto}
 .sched-row .sr-chip.flag-green{border-color:var(--edge);background:var(--edge-bg)}
 .sched-row .sr-chip.flag-yellow{border-color:var(--fair);background:var(--fair-bg)}
