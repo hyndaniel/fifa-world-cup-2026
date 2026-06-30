@@ -708,8 +708,8 @@
     {
       "date": "2026-06-30",
       "who": "YBB",
-      "type": "单场固定×50倍(078)",
-      "stake": 100,
+      "type": "单场固定×50倍×3张(078)",
+      "stake": 300,
       "serial": "2606301",
       "odds_max": 116.0,
       "settles": "周二(078)",
@@ -718,7 +718,8 @@
       ],
       "legs_hit": "待结",
       "pnl": null,
-      "settled": false
+      "settled": false,
+      "note": "三张相同实票各100"
     },
     {
       "date": "2026-06-30",
