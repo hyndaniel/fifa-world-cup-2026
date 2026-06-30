@@ -15,8 +15,8 @@ def test_ledger_json_loads_and_totals():
     assert sum(1 for r in recs if r["settled"]) == 17
     assert sum(1 for r in recs if r["result"] == "pending") == 0
     assert sum(1 for r in recs if r["tier"] == "green") == 0
-    # 实购票现 44 张, 跨 5 人, 含待结(pnl=null)
-    assert len(tix) == 44
+    # 实购票现 53 张, 跨 5 人, 含待结(pnl=null); 0630 周二夜场 077-084 导入 +9
+    assert len(tix) == 53
     people = set(data["people"])
     assert people == PEOPLE
     for t in tix:
@@ -142,14 +142,14 @@ def test_full_ledger_tickets_global():
     """实购票全局聚合跑真数据, 锚定手算(待结/已结拆分)。"""
     from backend.bet_stats import load_ledger
     s = build_summary(load_ledger(str(REPO / "data")))["tickets"]
-    assert s["count"] == 44
+    assert s["count"] == 53
     assert s["settled_count"] == 42
-    assert s["pending_count"] == 2
+    assert s["pending_count"] == 11
     assert s["won"] == 7
     assert s["settled_stake"] == 2992
     assert s["settled_pnl"] == 357.69
     assert s["settled_roi"] == round(357.69 / 2992, 4)
-    assert s["pending_stake"] == 614
+    assert s["pending_stake"] == 1658
 
 
 def test_full_ledger_tickets_by_person():
@@ -161,27 +161,27 @@ def test_full_ledger_tickets_by_person():
     # 你
     assert by["你"]["settled_pnl"] == 773.02
     assert by["你"]["settled"] == 18
-    assert by["你"]["pending"] == 2
+    assert by["你"]["pending"] == 4
     assert by["你"]["won"] == 5
     assert by["你"]["settled_stake"] == 1766
-    assert by["你"]["pending_stake"] == 614
+    assert by["你"]["pending_stake"] == 786
     # LYZ
     assert by["LYZ"]["settled_pnl"] == 378.43
     assert by["LYZ"]["settled"] == 3
-    assert by["LYZ"]["pending"] == 0
+    assert by["LYZ"]["pending"] == 1
     assert by["LYZ"]["won"] == 1
     assert by["LYZ"]["settled_stake"] == 320
-    assert by["LYZ"]["pending_stake"] == 0
-    # YBB(仅待结)
+    assert by["LYZ"]["pending_stake"] == 114
+    # YBB(已结1 + 待结2)
     assert by["YBB"]["settled_pnl"] == 20.81
     assert by["YBB"]["settled"] == 1
-    assert by["YBB"]["pending"] == 0
+    assert by["YBB"]["pending"] == 2
     assert by["YBB"]["won"] == 1
-    assert by["YBB"]["pending_stake"] == 0
+    assert by["YBB"]["pending_stake"] == 500
     # ZFW
     assert by["ZFW"]["settled_pnl"] == -352.57
     assert by["ZFW"]["settled"] == 6
-    assert by["ZFW"]["pending"] == 0
+    assert by["ZFW"]["pending"] == 1
     assert by["ZFW"]["settled_stake"] == 374
     # LYH
     assert by["LYH"]["settled_pnl"] == -462.0
@@ -201,10 +201,15 @@ def test_ledger_record_schema():
         assert r["tier"] in {"green", "yellow", "red"}
         assert r["result"] in {"win", "loss", "pending"}
         assert isinstance(r["settled"], bool)
-    tix_keys = {"date", "who", "type", "stake", "legs_hit", "pnl", "settled"}
+    tix_required = {"date", "who", "type", "stake", "legs_hit", "pnl", "settled"}
+    # 0630 起实购票可带可选元数据(serial/picks/odds_max/settles/note)便于赛后精确回填;
+    # 后端只读必填键, 可选键无害。守卫: 必填齐 + 不出现未知键。
+    tix_optional = {"serial", "picks", "odds_max", "settles", "note"}
     people = set(led["people"])
     for t in led["tickets"]:
-        assert set(t.keys()) == tix_keys
+        keys = set(t.keys())
+        assert tix_required <= keys, f"缺必填键: {tix_required - keys}"
+        assert keys <= tix_required | tix_optional, f"出现未知键: {keys - tix_required - tix_optional}"
         assert isinstance(t["stake"], (int, float))
         assert t["pnl"] is None or isinstance(t["pnl"], (int, float))
         assert isinstance(t["legs_hit"], str)
