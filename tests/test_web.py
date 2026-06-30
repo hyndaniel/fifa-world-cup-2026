@@ -216,8 +216,9 @@ def test_get_decisions_sorted_and_shape(client):
     assert [d["match_key"] for d in body["decisions"]] == ["早场", "晚场", "无开球"]
 
 
-def test_get_decisions_filters_expired(client):
-    """开球已过 -DECAY_H 滑窗的场被滤掉, 未来场保留 (确定性锁住滑窗行为)。"""
+def test_get_decisions_keeps_expired_tagged(client):
+    """开球已过 -DECAY_H 滑窗的场仍返回(tag=expired, 供前端"全部"筛选),
+    未来场 tag=upcoming (确定性锁住端点行为)。"""
     c, db = client
     now = datetime.now(BJ)
     db.save_decisions([
@@ -226,8 +227,9 @@ def test_get_decisions_filters_expired(client):
     ])
     r = c.get("/api/decisions")
     assert r.status_code == 200
-    keys = [d["match_key"] for d in r.json()["decisions"]]
-    assert keys == ["未来"]  # 过期场被滑窗滤掉
+    by_key = {d["match_key"]: d for d in r.json()["decisions"]}
+    assert by_key["过期"]["view_status"] == "expired"  # 不再被滤, 标为已结束
+    assert by_key["未来"]["view_status"] == "upcoming"
 
 
 def test_get_decisions_empty(tmp_path):
@@ -244,14 +246,15 @@ def test_get_decisions_empty(tmp_path):
     assert isinstance(body["ts"], str)
 
 
-def test_api_decisions_filters_expired_and_tags(tmp_path):
-    """GET /api/decisions 经 decisions_view: 远古场被滤, 远未来场保留+附 view_status。"""
+def test_api_decisions_keeps_expired_tagged(tmp_path):
+    """GET /api/decisions: 全部场都返回(供前端"全部"筛选), 远古场 tag=expired,
+    远未来场 tag=upcoming。前端默认"未结束"筛选仍只显示 upcoming。"""
     db_path = tmp_path / "w.db"
     db = Db(str(db_path)); db.init()
     # 用 "1.01"(年初) 与 "12.31"(年末) 相对当前真实日期: A 必 expired, B 必 upcoming,
     # 免依赖 freeze 时间库。
     db.save_decisions([
-        {"match_key": "A", "ko_bj": "1.01 00:00"},   # 远古 → expired, 应被滤掉
+        {"match_key": "A", "ko_bj": "1.01 00:00"},   # 远古 → expired, 仍保留(供"全部")
         {"match_key": "B", "ko_bj": "12.31 23:59"},  # 远未来 → upcoming, 保留
     ])
     cfg = load_config("nope.toml")
@@ -260,9 +263,10 @@ def test_api_decisions_filters_expired_and_tags(tmp_path):
     r = client.get("/api/decisions")
     assert r.status_code == 200
     body = r.json()
-    keys = [d["match_key"] for d in body["decisions"]]
-    assert "A" not in keys           # 远古场被滤
-    assert "B" in keys
+    by_key = {d["match_key"]: d for d in body["decisions"]}
+    assert "A" in by_key                          # 远古场不再被滤掉
+    assert by_key["A"]["view_status"] == "expired"
+    assert by_key["B"]["view_status"] == "upcoming"
     assert all("view_status" in d for d in body["decisions"])
 
 

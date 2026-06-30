@@ -59,6 +59,19 @@ def test_decisions_view_drops_expired_keeps_rest():
     assert out[1]["view_status"] == "upcoming"
 
 
+def test_decisions_view_include_expired_keeps_and_tags():
+    # include_expired=True: 过期场不丢, tag=expired, 供"全部"筛选用
+    ds = [_d("A", "6.26 16:00"),  # expired (7h 前)
+          _d("B", "6.26 19:00"),  # recent
+          _d("C", "6.27 02:00")]  # upcoming
+    out = decisions_view(ds, NOW, include_expired=True)
+    keys = [d["match_key"] for d in out]
+    assert keys == ["A", "B", "C"]            # 升序, A 不再被丢
+    assert out[0]["view_status"] == "expired"
+    assert out[1]["view_status"] == "recent"
+    assert out[2]["view_status"] == "upcoming"
+
+
 def test_decisions_view_does_not_clobber_status_field():
     out = decisions_view([_d("B", "6.26 19:00")], NOW)
     assert out[0]["status"] == "Selling"  # 售卖态不被覆盖

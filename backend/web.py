@@ -214,12 +214,16 @@ def create_app(db_path="wc.db", cfg=None, reports_dir="reports",
 
     # ---------------- /api/decisions ----------------
     # 前端"每场决策卡"据此渲染。按 ko_bj 升序 (缺末尾), 附服务端当前北京时间 ts。
+    # include_expired=True: 已结束场也返回(tag view_status=expired), 供前端"全部"筛选展示;
+    # 默认"未结束"筛选客户端只显示 upcoming, 故不污染默认视图。
     @app.get("/api/decisions", dependencies=[Depends(auth_dep)])
     def api_decisions():
         now_bj = datetime.now(BJ)
         return {
             "ts": now_bj.isoformat(timespec="seconds"),
-            "decisions": decisions_view(db.get_decisions(), now_bj, odds_map=db.get_odds()),
+            "decisions": decisions_view(
+                db.get_decisions(), now_bj, odds_map=db.get_odds(), include_expired=True
+            ),
         }
 
     # ---------------- /api/bets/summary ----------------

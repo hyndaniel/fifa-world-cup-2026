@@ -95,11 +95,15 @@ def ko_status(ko_bj, now_bj, decay_h=DECAY_H):
     return ("expired", dt)
 
 
-def decisions_view(decisions, now_bj, odds_map=None, decay_h=DECAY_H):
-    """筛掉 expired 的场, 每条附 view_status + odds(按 match_key join), 按开球时刻升序。
+def decisions_view(decisions, now_bj, odds_map=None, decay_h=DECAY_H, include_expired=False):
+    """每条附 view_status + odds(按 match_key join), 按开球时刻升序。
 
     输入是 db.get_decisions() 的全量 Decision dict 列表; odds_map={match_key: 赔率面板 payload}
-    (db.get_odds()); 无对应赔率的卡 odds=None。返回过滤+标注后的浅拷贝列表。
+    (db.get_odds()); 无对应赔率的卡 odds=None。返回标注后的浅拷贝列表。
+
+    include_expired=False(默认): 筛掉 expired(开球超 decay_h 小时)的场。
+    include_expired=True: 保留并 tag view_status="expired" —— 供前端"全部"筛选展示已结束场;
+    前端默认"未结束"筛选仍只显示 upcoming, 故过期场不污染默认视图。
     """
     odds_map = odds_map or {}
     out = []
@@ -107,7 +111,7 @@ def decisions_view(decisions, now_bj, odds_map=None, decay_h=DECAY_H):
         if not isinstance(d, dict):
             continue
         status, dt = ko_status(d.get("ko_bj"), now_bj, decay_h)
-        if status == "expired":
+        if status == "expired" and not include_expired:
             continue
         out.append((dt, {**d, "view_status": status, "odds": odds_map.get(d.get("match_key"))}))
     out.sort(key=lambda t: (t[0] is None, t[0] or now_bj))
