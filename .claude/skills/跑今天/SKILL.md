@@ -91,6 +91,84 @@ CST = ET + 12/13。判断"今晚/明天/是否已开赛"**必须看 ET 当下**,
    - (可复用步骤见项目记忆 [Poly refresh recipe])
 4. 取不到/缺位就**明说哪源缺**,不拿陈旧/缺失硬算。Poly 缺 → v2/价值的相关结论降靠谱度并标注。
 
+### 第 2.5 步 · 情报新鲜度闸(fan-out 前查 enrich,杜绝 v2 静默空转)
+
+第 2 步刷的是**盘口**;本步查的是**情报(事实卡)**——两者都是 v2 的合法输入,且都得在 fan-out 前新鲜。
+
+**目的(必须懂,不是仪式):** 头号红线把 v2 锁死成「只能吃市场基线 + 中立事实卡」,事实卡来源 = `enrich`
+表(经 `save_intel.py` / `collect_enrich.py` 喂入,stale 阈值 48h),由**独立的 deep-search 仪式**产出——
+**跑今天本身不触发也不依赖 deepsearch,只静默读 enrich**。于是有个**静默坑**(2026-06-30 实测):当天
+enrich 全是几天前小组阶段旧闻(全 >48h stale),v2 没有任何新鲜确证事实可偏离 → 只能**照抄市场基线** →
+全场 0 偏离 = **空转**,而**没有任何自动提示**,全靠编排者肉眼发现。这丢掉了 v2 相对市场/v1 的全部潜在
+增量(跑分卡历史显示 v2 的**有据**偏离平均**净拉低 Brier** = 有用)。本闸在第 3 步 fan-out **之前**强制
+检查情报新鲜度,空窗就补,**绝不让 v2 静默空转**。(第 3 步 3a 会把事实卡打进 v2 的唯一合法输入;本闸
+保证那张卡不是空的。)
+
+**① 查每场的 fresh-intel 条数。** 对第 1 步选出的每场,算 `match_fact_card` 返回的 `teams[].news` 里
+`stale==False` 的条数(= 该场当下有几条新鲜确证事实可喂 v2):
+
+```
+python3 -c "
+from backend.db import Db
+from backend.intel import match_fact_card
+from datetime import datetime, timezone, timedelta
+now = datetime.now(timezone(timedelta(hours=8)))      # 北京时区, 与 stale 计龄一致
+for mk in ['<match_key>', '<match_key>', ...]:         # 第 1 步选出的各场 zucai_num
+    fc = match_fact_card(Db('data/wc.db'), mk, now)
+    fresh = sum(1 for t in fc.get('teams', []) for n in (t.get('news') or []) if not n.get('stale'))
+    print(mk, 'fresh_intel=', fresh)
+"
+```
+
+**② 判定 + 动作:**
+
+- **某场 `fresh==0`(无任何新鲜确证情报)→ 该场情报空窗 → 闸触发。** 新比赛日首跑最常见(enrich 还停
+  在上一轮旧闻,全 stale)。
+- **某场 `fresh>0` → 已有新鲜情报 → 跳过、log 一句**(别重复烧 deepsearch 的钱)。
+- 闸触发时(**默认 one-click 自动补**)只对**空窗的那些场**做下面 a–d:
+
+  **a. 跑 deep-search 搜确证情报。** 用 `/deep-research`(产出落 `reports/intel/*赛前情报*.md`,与
+  save_intel 上游一致;或项目 deep-search 仪式)逐场/批量搜空窗那两队的**确证**停赛 / 伤停 / 官宣大轮换。
+  **模型用 opus 4.8、effort 用 max**(用户指定:深度搜情报值得最高规格,别降便宜档)。
+
+  **b. 只抽确证事实,剥掉判断。** 从报告**只抽 ✅坐实的**停赛 / 伤停 / 官宣大轮换;**剥掉出线形势 / 动机
+  / 叙事**——那些喂 v1 / odds,**绝不进 v2**(红线)。抽成 `save_intel.py` 的输入 JSON(`age_h` 省略 = 0
+  = 现在 / 非 stale):
+
+  ```jsonc
+  {
+    "厄瓜多尔": [{"title": "组织核心 Páez 停赛缺阵", "url": "https://…", "age_h": 0}],
+    "日本":     [{"title": "久保建英膝伤确认缺阵", "url": "https://…", "age_h": 0}]
+  }
+  ```
+
+  ⚠️未坐实的别写(或给 >48h 的 `age_h` 让它 stale 沉底,不冒充活因子)。
+
+  **c. 喂 enrich(必须打主库)。**
+
+  ```
+  python3 tools/save_intel.py --db <主 checkout 绝对路径>/data/wc.db --json <facts.json>   # 可先 --dry-run 看抽出几条
+  ```
+
+  > **🔴 主库绝对路径坑(血泪):** `data/wc.db` 被 **gitignore**,v2 第 3 步真读的是**主 checkout** 那个
+  > 库;你现在在 worktree 副本里,save_intel **必须用主 checkout 的绝对路径**打主库(**不是** worktree
+  > 的 `data/wc.db`),否则喂了 v2 也读不到、闸白触发。
+
+  **d. 复查。** 重跑 ① 的检查命令,确认空窗场 `fresh>0` 再进第 3 步。
+
+**③ 红线不破:** deepsearch 产出经 save_intel **只搬确证事实进 enrich**(中立、判断已剥离),v2 第 3 步
+仍只读事实卡——**红线一个字没动**。save_intel 这口子本身就只收"确证事实",出线 / 动机 / 价值结构上进
+不来。
+
+**④ 成本 / 保守开关:** 默认空窗即自动补(a–d)。若想省钱 / 赶时间,可改为**只提示 + 询问用户是否跑
+deepsearch**——但**绝不退回静默空转**:无论补不补,第 6 步摘要都必须报「今日情报新鲜度 + 是否跑了
+deepsearch + 哪些场仍空窗」。
+
+> **诚实边界(必须懂,别越界吹):** 此刻(开球前数小时)deepsearch 搜得到**伤停 / 停赛 / 轮换倾向 /
+> 动机**,但**搜不到首发名单**(首发约赛前 1h 才官宣)。所以本闸解决的是「**v2 有没有确证事实可偏离**」,
+> **不替代**第 7 步的「赛前 ~1h 首发微调窗」——**两者都要留**:本闸保 fan-out 时 v2 不空转,首发窗保临场
+> 首发对得上依据。
+
 ### 第 3 步 · 调用 `wc-predict-fanout` workflow(🔴红线由脚本结构焊死)
 
 **本步已从「主会话自觉派三个 subagent」升级为「确定性 Workflow 脚本」**(设计 §2 决策2:骨架=确定性
@@ -249,6 +327,7 @@ python3 tools/v2_report.py
 - 每场一行:v1 比分 / v2 胜平负 % + 靠谱度 + 剧本 / 价值结论(有无真价值,最不亏腿);
 - Brier 跑分卡有无新变化(若有已回填的赛果);
 - 已 POST 看板 `n` 条决策卡,可在「决策」tab(手机)看;
+- **今日情报新鲜度:** 各场新鲜确证情报条数 + 是否为空窗场跑了 deepsearch 补喂(opus4.8/max);补后仍空窗 → 明说该场 v2 只能照抄市场(无偏离);
 - 哪些场因缺源(Poly 缺/盘口未出)降了靠谱度或暂缺某块。
 
 ### 第 7 步 · 诚实边界(必须告诉用户,不假装全自动)
@@ -274,4 +353,5 @@ python3 tools/v2_report.py
 - 📏 **加不删:** 本 skill 只编排现有 agent/脚本,不重写预测/价值逻辑;不改 `.claude/agents/*.md`。
 - ⏱ **ET 铁律:** 开球判定一律看 ET 当下,温哥华场 PT = ET − 3。
 - 🧊 **不拿陈旧硬算:** Poly/盘口缺或旧 → 明说、降靠谱度,不伪造黄档。
+- 🔭 **情报闸:** fan-out 前查 enrich 新鲜度,空窗则 deepsearch(opus4.8/max)补喂,绝不静默让 v2 空转。
 - 🚫 **不自动下注、不碰资金。** 价值结论永远是"若要下,这条最不亏",不是"去下"。
