@@ -909,7 +909,10 @@ function renderBetStats(s) {
     ["日期", "谁", "票型", "注", "命中", "盈亏"].forEach((h, i) =>
       head.appendChild(el("span", "tk-c tk-c" + i, h)));
     tbl.appendChild(head);
-    for (const r of tix.rows || []) {
+    // 明细表按日期倒序: 最新(今天)的票排最上面 (Array.sort 稳定, 同日保持入库顺序)
+    const _tixRows = (tix.rows || []).slice()
+      .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+    for (const r of _tixRows) {
       const row = el("div", "tk-row");
       row.appendChild(el("span", "tk-c tk-c0", (r.date || "").slice(5)));
       row.appendChild(el("span", "tk-c tk-c1", r.who || ""));
