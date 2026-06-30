@@ -15,8 +15,8 @@ def test_ledger_json_loads_and_totals():
     assert sum(1 for r in recs if r["settled"]) == 17
     assert sum(1 for r in recs if r["result"] == "pending") == 0
     assert sum(1 for r in recs if r["tier"] == "green") == 0
-    # 实购票现 42 张, 跨 5 人, 含待结(pnl=null)
-    assert len(tix) == 42
+    # 实购票现 44 张, 跨 5 人, 含待结(pnl=null)
+    assert len(tix) == 44
     people = set(data["people"])
     assert people == PEOPLE
     for t in tix:
@@ -142,13 +142,13 @@ def test_full_ledger_tickets_global():
     """实购票全局聚合跑真数据, 锚定手算(待结/已结拆分)。"""
     from backend.bet_stats import load_ledger
     s = build_summary(load_ledger(str(REPO / "data")))["tickets"]
-    assert s["count"] == 42
-    assert s["settled_count"] == 40
+    assert s["count"] == 44
+    assert s["settled_count"] == 42
     assert s["pending_count"] == 2
     assert s["won"] == 7
-    assert s["settled_stake"] == 2952
-    assert s["settled_pnl"] == 397.69
-    assert s["settled_roi"] == round(397.69 / 2952, 4)
+    assert s["settled_stake"] == 2992
+    assert s["settled_pnl"] == 357.69
+    assert s["settled_roi"] == round(357.69 / 2992, 4)
     assert s["pending_stake"] == 614
 
 
@@ -159,11 +159,11 @@ def test_full_ledger_tickets_by_person():
     assert [p["who"] for p in bp] == ["你", "LYZ", "YBB", "ZFW", "LYH"]
     by = {p["who"]: p for p in bp}
     # 你
-    assert by["你"]["settled_pnl"] == 813.02
-    assert by["你"]["settled"] == 16
+    assert by["你"]["settled_pnl"] == 773.02
+    assert by["你"]["settled"] == 18
     assert by["你"]["pending"] == 2
     assert by["你"]["won"] == 5
-    assert by["你"]["settled_stake"] == 1726
+    assert by["你"]["settled_stake"] == 1766
     assert by["你"]["pending_stake"] == 614
     # LYZ
     assert by["LYZ"]["settled_pnl"] == 378.43
