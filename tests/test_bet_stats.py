@@ -10,10 +10,10 @@ def test_ledger_json_loads_and_totals():
     data = json.loads((REPO / "data" / "bet_ledger.json").read_text(encoding="utf-8"))
     recs = data["recommendations"]
     tix = data["tickets"]
-    # 推荐腿不变: 17 条 = 14 已结 + 3 pending, green 迄今 = 0(诚实锚点)
+    # 推荐腿 17 条全已结(R32 074-076 于 6/30 回填), green 迄今 = 0(诚实锚点)
     assert len(recs) == 17
-    assert sum(1 for r in recs if r["settled"]) == 14
-    assert sum(1 for r in recs if r["result"] == "pending") == 3
+    assert sum(1 for r in recs if r["settled"]) == 17
+    assert sum(1 for r in recs if r["result"] == "pending") == 0
     assert sum(1 for r in recs if r["tier"] == "green") == 0
     # 实购票现 42 张, 跨 5 人, 含待结(pnl=null)
     assert len(tix) == 42
@@ -129,13 +129,13 @@ def test_full_ledger_recommendations_matches_hand_count():
     """推荐腿段跑真数据, 锚定手算(本任务保持不变)。"""
     from backend.bet_stats import load_ledger
     s = build_summary(load_ledger(str(REPO / "data")))["recommendations"]
-    assert s["settled"] == 14
-    assert s["win"] == 7
-    assert s["hit_rate"] == 0.5
+    assert s["settled"] == 17
+    assert s["win"] == 9
+    assert s["hit_rate"] == round(9 / 17, 4)
     assert s["by_tier"]["green"] == {"total": 0, "win": 0}
     assert s["by_tier"]["yellow"] == {"total": 4, "win": 2}
-    assert s["by_tier"]["red"] == {"total": 10, "win": 5}
-    assert s["hypo_unit_pnl"] == 6.51
+    assert s["by_tier"]["red"] == {"total": 13, "win": 7}
+    assert s["hypo_unit_pnl"] == 8.61
 
 
 def test_full_ledger_tickets_global():
@@ -143,13 +143,13 @@ def test_full_ledger_tickets_global():
     from backend.bet_stats import load_ledger
     s = build_summary(load_ledger(str(REPO / "data")))["tickets"]
     assert s["count"] == 42
-    assert s["settled_count"] == 33
-    assert s["pending_count"] == 9
-    assert s["won"] == 6
-    assert s["settled_stake"] == 2480
-    assert s["settled_pnl"] == 778.88
-    assert s["settled_roi"] == round(778.88 / 2480, 4)
-    assert s["pending_stake"] == 1086
+    assert s["settled_count"] == 40
+    assert s["pending_count"] == 2
+    assert s["won"] == 7
+    assert s["settled_stake"] == 2952
+    assert s["settled_pnl"] == 397.69
+    assert s["settled_roi"] == round(397.69 / 2952, 4)
+    assert s["pending_stake"] == 614
 
 
 def test_full_ledger_tickets_by_person():
@@ -166,27 +166,27 @@ def test_full_ledger_tickets_by_person():
     assert by["你"]["settled_stake"] == 1726
     assert by["你"]["pending_stake"] == 614
     # LYZ
-    assert by["LYZ"]["settled_pnl"] == 584.43
-    assert by["LYZ"]["settled"] == 1
-    assert by["LYZ"]["pending"] == 2
+    assert by["LYZ"]["settled_pnl"] == 378.43
+    assert by["LYZ"]["settled"] == 3
+    assert by["LYZ"]["pending"] == 0
     assert by["LYZ"]["won"] == 1
-    assert by["LYZ"]["settled_stake"] == 114
-    assert by["LYZ"]["pending_stake"] == 206
+    assert by["LYZ"]["settled_stake"] == 320
+    assert by["LYZ"]["pending_stake"] == 0
     # YBB(仅待结)
-    assert by["YBB"]["settled_pnl"] == 0.0
-    assert by["YBB"]["settled"] == 0
-    assert by["YBB"]["pending"] == 1
-    assert by["YBB"]["won"] == 0
-    assert by["YBB"]["pending_stake"] == 70
+    assert by["YBB"]["settled_pnl"] == 20.81
+    assert by["YBB"]["settled"] == 1
+    assert by["YBB"]["pending"] == 0
+    assert by["YBB"]["won"] == 1
+    assert by["YBB"]["pending_stake"] == 0
     # ZFW
-    assert by["ZFW"]["settled_pnl"] == -252.57
-    assert by["ZFW"]["settled"] == 4
-    assert by["ZFW"]["pending"] == 2
-    assert by["ZFW"]["settled_stake"] == 274
+    assert by["ZFW"]["settled_pnl"] == -352.57
+    assert by["ZFW"]["settled"] == 6
+    assert by["ZFW"]["pending"] == 0
+    assert by["ZFW"]["settled_stake"] == 374
     # LYH
-    assert by["LYH"]["settled_pnl"] == -366.0
-    assert by["LYH"]["settled"] == 12
-    assert by["LYH"]["settled_stake"] == 366
+    assert by["LYH"]["settled_pnl"] == -462.0
+    assert by["LYH"]["settled"] == 14
+    assert by["LYH"]["settled_stake"] == 462
 
 
 def test_ledger_record_schema():
