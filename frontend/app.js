@@ -580,7 +580,8 @@ function buildScheduleRow(d) {
     const b = flagBadge(best.flag);
     const chip = el("div", `sr-chip ${b.cls}`);
     chip.appendChild(signalDot(best.flag));
-    chip.appendChild(el("span", "sr-chip-desc", best.desc || `${best.market || ""} ${best.outcome || ""}`.trim() || "最不亏"));
+    // 列表只放短腿标签 (market+outcome), 完整 desc 留给右侧详情面板; 兜底截断由 CSS 保证
+    chip.appendChild(el("span", "sr-chip-desc", `${best.market || ""} ${best.outcome || ""}`.trim() || best.desc || "最不亏"));
     const ev = best.ev_pct;
     if (ev != null && !Number.isNaN(Number(ev))) {
       chip.appendChild(el("span", Number(ev) >= 0 ? "ev-pos" : "ev-neg", fmtSignedPct(ev)));
