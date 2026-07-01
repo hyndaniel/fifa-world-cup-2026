@@ -70,7 +70,14 @@ def _safe_write_target(name, reports_dir):
 
 
 def write_report(name, content, reports_dir="reports"):
-    """落盘 reports/<name>.md(自动建子目录), 返回写入文件的 stem。"""
+    """落盘 reports/<name>.md(自动建子目录), 返回写入文件的 stem。
+
+    content 非字符串(如客户端误传成 list/数字)统一转成 ValueError, 而不是让
+    Path.write_text 抛 TypeError——调用方(/api/ingest/reports)按条 catch ValueError
+    隔离单条失败, 不该因为类型不对就让整批 500。
+    """
+    if not isinstance(content, str):
+        raise ValueError(f"content must be str, got {type(content).__name__}")
     target = _safe_write_target(name, reports_dir)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8")

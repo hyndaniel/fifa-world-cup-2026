@@ -452,3 +452,34 @@ def test_ingest_reports_rejects_traversal_reports_error_not_500(tmp_path):
     assert len(body["errors"]) == 1
     assert body["errors"][0]["name"] == "../evil"
     assert c.get("/api/reports/ok").status_code == 200
+
+
+def test_ingest_reports_non_string_content_reports_error_not_500(tmp_path):
+    """content 误传成 list(容易手误的坑)不该让整批 500——单条进 errors, 其它条照常处理。"""
+    c = _iso_client(tmp_path)
+    r = c.post("/api/ingest/reports", json={"reports": [
+        {"name": "bad", "content": ["not", "a", "string"]},
+        {"name": "ok", "content": "# OK\ny"},
+    ]})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["n"] == 1
+    assert len(body["errors"]) == 1
+    assert body["errors"][0]["name"] == "bad"
+    assert c.get("/api/reports/ok").status_code == 200
+
+
+def test_ingest_endpoints_require_auth_when_password_set(tmp_path):
+    cfg = load_config("nope.toml")
+    cfg["server"]["password"] = "secret"
+    app = create_app(
+        db_path=str(tmp_path / "t.db"), cfg=cfg, require_auth=True,
+        data_dir=str(tmp_path / "data"), reports_dir=str(tmp_path / "reports"),
+    )
+    c = TestClient(app)
+    assert c.post("/api/ingest/tickets", json={"tickets": []}).status_code == 401
+    assert c.post("/api/ingest/reports", json={"reports": []}).status_code == 401
+    assert c.post("/api/ingest/tickets", json={"tickets": []},
+                   auth=("u", "secret")).status_code == 200
+    assert c.post("/api/ingest/reports", json={"reports": []},
+                   auth=("u", "secret")).status_code == 200

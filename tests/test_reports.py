@@ -110,6 +110,15 @@ def test_write_report_rejects_traversal(tmp_path):
     assert not (tmp_path.parent / "secret.md").exists()
 
 
+def test_write_report_rejects_non_string_content(tmp_path):
+    """content 误传成 list/数字/布尔 → ValueError(不是 Path.write_text 的 TypeError),
+    这样 /api/ingest/reports 现有的 except ValueError 才能兜住, 不至于整批 500。"""
+    for bad_content in [["not", "a", "string"], 123, True, {"k": "v"}]:
+        with pytest.raises(ValueError):
+            write_report("r", bad_content, str(tmp_path))
+    assert not (tmp_path / "r.md").exists()
+
+
 def test_bump_time_sets_and_overrides_manifest_entry(tmp_path):
     (tmp_path / "report_times.json").write_text(
         json.dumps({"old": 1000}), encoding="utf-8"
