@@ -143,28 +143,28 @@ def test_full_ledger_tickets_global():
     from backend.bet_stats import load_ledger
     s = build_summary(load_ledger(str(REPO / "data")))["tickets"]
     assert s["count"] == 54
-    assert s["settled_count"] == 42
-    assert s["pending_count"] == 12
-    assert s["won"] == 7
-    assert s["settled_stake"] == 2992
-    assert s["settled_pnl"] == 386.67
-    assert s["settled_roi"] == round(386.67 / 2992, 4)
-    assert s["pending_stake"] == 2152
+    assert s["settled_count"] == 50
+    assert s["pending_count"] == 4
+    assert s["won"] == 10
+    assert s["settled_stake"] == 3922
+    assert s["settled_pnl"] == 607.51
+    assert s["settled_roi"] == round(607.51 / 3922, 4)
+    assert s["pending_stake"] == 1222
 
 
 def test_full_ledger_tickets_by_person():
     """by_person 跑真数据: 顺序 + 每人数值锚定。"""
     from backend.bet_stats import load_ledger
     bp = build_summary(load_ledger(str(REPO / "data")))["tickets"]["by_person"]
-    assert [p["who"] for p in bp] == ["你", "LYZ", "YBB", "ZFW", "LYH"]
+    assert [p["who"] for p in bp] == ["你", "YBB", "LYZ", "ZFW", "LYH"]
     by = {p["who"]: p for p in bp}
     # 你
-    assert by["你"]["settled_pnl"] == 802.0
-    assert by["你"]["settled"] == 18
-    assert by["你"]["pending"] == 5
+    assert by["你"]["settled_pnl"] == 630.0
+    assert by["你"]["settled"] == 20
+    assert by["你"]["pending"] == 3
     assert by["你"]["won"] == 5
-    assert by["你"]["settled_stake"] == 1766
-    assert by["你"]["pending_stake"] == 1280
+    assert by["你"]["settled_stake"] == 1938
+    assert by["你"]["pending_stake"] == 1108
     # LYZ
     assert by["LYZ"]["settled_pnl"] == 378.43
     assert by["LYZ"]["settled"] == 3
@@ -172,21 +172,22 @@ def test_full_ledger_tickets_by_person():
     assert by["LYZ"]["won"] == 1
     assert by["LYZ"]["settled_stake"] == 320
     assert by["LYZ"]["pending_stake"] == 114
-    # YBB(已结1 + 待结2)
-    assert by["YBB"]["settled_pnl"] == 20.81
-    assert by["YBB"]["settled"] == 1
-    assert by["YBB"]["pending"] == 2
-    assert by["YBB"]["won"] == 1
-    assert by["YBB"]["pending_stake"] == 500
+    # YBB(077-078·078三张实购票 R32 结算全中)
+    assert by["YBB"]["settled_pnl"] == 444.81
+    assert by["YBB"]["settled"] == 3
+    assert by["YBB"]["pending"] == 0
+    assert by["YBB"]["won"] == 3
+    assert by["YBB"]["settled_stake"] == 570
+    assert by["YBB"]["pending_stake"] == 0
     # ZFW
-    assert by["ZFW"]["settled_pnl"] == -352.57
-    assert by["ZFW"]["settled"] == 6
-    assert by["ZFW"]["pending"] == 1
-    assert by["ZFW"]["settled_stake"] == 374
+    assert by["ZFW"]["settled_pnl"] == -191.68
+    assert by["ZFW"]["settled"] == 7
+    assert by["ZFW"]["pending"] == 0
+    assert by["ZFW"]["settled_stake"] == 424
     # LYH
-    assert by["LYH"]["settled_pnl"] == -462.0
-    assert by["LYH"]["settled"] == 14
-    assert by["LYH"]["settled_stake"] == 462
+    assert by["LYH"]["settled_pnl"] == -654.05
+    assert by["LYH"]["settled"] == 17
+    assert by["LYH"]["settled_stake"] == 670
 
 
 def test_ledger_record_schema():
