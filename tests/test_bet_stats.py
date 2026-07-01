@@ -216,3 +216,25 @@ def test_ledger_record_schema():
         assert isinstance(t["legs_hit"], str)
         assert isinstance(t["settled"], bool)
         assert t["who"] in people
+
+
+def test_save_ledger_roundtrip(tmp_path):
+    """save_ledger 写的文件, load_ledger 读回来内容一致(供 /api/ingest/tickets 用)。"""
+    from backend.bet_stats import load_ledger, save_ledger
+
+    ledger = {"updated": "2026-07-01", "recommendations": [], "tickets": [
+        {"date": "2026-07-01", "who": "HYN", "type": "t", "stake": 10,
+         "legs_hit": "x", "pnl": None, "settled": False},
+    ], "people": ["HYN"]}
+    save_ledger(ledger, str(tmp_path))
+    assert (tmp_path / "bet_ledger.json").exists()
+    assert load_ledger(str(tmp_path)) == ledger
+
+
+def test_save_ledger_creates_data_dir(tmp_path):
+    """data_dir 不存在时 save_ledger 自动建目录(ingest 到全新环境不报错)。"""
+    from backend.bet_stats import save_ledger
+
+    target = tmp_path / "nested" / "data"
+    save_ledger({"updated": None, "recommendations": [], "tickets": []}, str(target))
+    assert (target / "bet_ledger.json").exists()

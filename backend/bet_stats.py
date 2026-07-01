@@ -21,6 +21,21 @@ def load_ledger(data_dir: str = "data") -> dict:
     return data
 
 
+def save_ledger(ledger: dict, data_dir: str = "data") -> None:
+    """原子写 data_dir/bet_ledger.json(临时文件+os.replace, 防写到一半崩出坏文件)。
+
+    供 /api/ingest/tickets 用: 本地维护的台账直接 POST 落盘到这里, load_ledger 下次
+    请求现读即生效, 不需要经 git/部署。
+    """
+    os.makedirs(data_dir, exist_ok=True)
+    path = os.path.join(data_dir, "bet_ledger.json")
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(ledger, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+    os.replace(tmp, path)
+
+
 def _round(x: float, n: int = 4) -> float:
     return round(float(x), n)
 

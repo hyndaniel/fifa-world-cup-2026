@@ -12,6 +12,8 @@ create_app(db_path=..., cfg=None, reports_dir="reports", frontend_dir="frontend"
 - GET    /api/watchlist        → db.watchlist()
 - POST   /api/watchlist        → db.add_watch(kind, key, note)
 - DELETE /api/watchlist/{id}   → db.del_watch(id)
+- POST   /api/ingest/tickets   → backend.bet_stats.save_ledger()   (台账整份/分段落盘, 绕开git)
+- POST   /api/ingest/reports   → backend.reports.write_report()    (报告md落盘, 绕开git)
 - /                            → StaticFiles(frontend, html=True)
 
 Basic-Auth 依赖: 密码取 cfg["server"]["password"]。关掉鉴权 (测试用):
@@ -211,6 +213,56 @@ def create_app(db_path="wc.db", cfg=None, reports_dir="reports",
         items = (body or {}).get("items") or []
         n = db.save_odds(items)
         return {"accepted": True, "n": n, "skipped": len(items) - n}
+
+    # ---------------- /api/ingest/tickets ----------------
+    # 本地维护的下注台账 bet_ledger.json POST 到这里, 直接落盘 data_dir/bet_ledger.json——
+    # 绕开 git commit/PR/部署那套, bet_stats.load_ledger 下次请求现读即生效。按顶层字段
+    # 覆盖(updated/recommendations/tickets/people/ticket_note 谁给了就覆盖谁), 未给的
+    # 字段保留服务器上原值, 防止漏发某个字段时把它整段清空。
+    @app.post("/api/ingest/tickets", dependencies=[Depends(auth_dep)])
+    async def api_ingest_tickets(request: Request):
+        body = await request.json()
+        if not isinstance(body, dict):
+            raise HTTPException(status_code=400, detail="payload must be a JSON object")
+        for key in ("recommendations", "tickets", "people"):
+            if key in body and not isinstance(body[key], list):
+                raise HTTPException(status_code=400, detail=f"{key} must be a list")
+        current = bet_stats.load_ledger(data_dir)
+        for key in ("updated", "recommendations", "tickets", "people", "ticket_note"):
+            if key in body:
+                current[key] = body[key]
+        bet_stats.save_ledger(current, data_dir)
+        return {
+            "accepted": True,
+            "tickets": len(current.get("tickets") or []),
+            "recommendations": len(current.get("recommendations") or []),
+        }
+
+    # ---------------- /api/ingest/reports ----------------
+    # 本地报告(预测/复盘等 markdown)POST 到这里直接落 reports_dir——同样绕开 git/部署,
+    # reports/*.md 是 bind-mount + 每次请求现读, 落盘即生效。name 可含子目录(如
+    # "agents/wc-bet__下注复盘")定位新报告该落哪个子目录; 已存在的报告按该路径覆盖
+    # 原内容。落盘后顺带刷新 report_times.json 的时间戳(这条链路不走 git commit, 排序
+    # 不能再指望"构建期清单靠 git 提交时间生成"那一环, 得在 ingest 时直接写)。
+    @app.post("/api/ingest/reports", dependencies=[Depends(auth_dep)])
+    async def api_ingest_reports(request: Request):
+        body = await request.json()
+        items = (body or {}).get("reports") or []
+        n = 0
+        errors = []
+        for item in items:
+            name = (item or {}).get("name")
+            content = (item or {}).get("content")
+            if not name or content is None:
+                errors.append({"name": name, "error": "missing name/content"})
+                continue
+            try:
+                stem = reports_mod.write_report(name, content, reports_dir)
+                reports_mod.bump_time(stem, reports_dir)
+                n += 1
+            except ValueError as e:
+                errors.append({"name": name, "error": str(e)})
+        return {"accepted": True, "n": n, "errors": errors}
 
     # ---------------- /api/decisions ----------------
     # 前端"每场决策卡"据此渲染。按 ko_bj 升序 (缺末尾), 附服务端当前北京时间 ts。
