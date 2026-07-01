@@ -337,9 +337,9 @@ def test_bets_summary_ok(client):
     assert r.status_code == 200
     body = r.json()
     assert "recommendations" in body and "tickets" in body
-    # 默认 data_dir="data" → 真台账: green=0, 已结净 +607.51, 榜首是「你」
+    # 默认 data_dir="data" → 真台账: green=0, 已结净 +496.92, 榜首是「你」
     assert body["recommendations"]["by_tier"]["green"]["total"] == 0
-    assert body["tickets"]["settled_pnl"] == 607.51
+    assert body["tickets"]["settled_pnl"] == 496.92
     assert body["tickets"]["by_person"][0]["who"] == "你"
 
 

@@ -143,13 +143,13 @@ def test_full_ledger_tickets_global():
     from backend.bet_stats import load_ledger
     s = build_summary(load_ledger(str(REPO / "data")))["tickets"]
     assert s["count"] == 54
-    assert s["settled_count"] == 50
-    assert s["pending_count"] == 4
+    assert s["settled_count"] == 51
+    assert s["pending_count"] == 3
     assert s["won"] == 10
-    assert s["settled_stake"] == 3922
-    assert s["settled_pnl"] == 607.51
-    assert s["settled_roi"] == round(607.51 / 3922, 4)
-    assert s["pending_stake"] == 1222
+    assert s["settled_stake"] == 4042
+    assert s["settled_pnl"] == 496.92
+    assert s["settled_roi"] == round(496.92 / 4042, 4)
+    assert s["pending_stake"] == 1102
 
 
 def test_full_ledger_tickets_by_person():
@@ -159,12 +159,12 @@ def test_full_ledger_tickets_by_person():
     assert [p["who"] for p in bp] == ["你", "YBB", "LYZ", "ZFW", "LYH"]
     by = {p["who"]: p for p in bp}
     # 你
-    assert by["你"]["settled_pnl"] == 630.0
-    assert by["你"]["settled"] == 20
-    assert by["你"]["pending"] == 3
+    assert by["你"]["settled_pnl"] == 519.41
+    assert by["你"]["settled"] == 21
+    assert by["你"]["pending"] == 2
     assert by["你"]["won"] == 5
-    assert by["你"]["settled_stake"] == 1938
-    assert by["你"]["pending_stake"] == 1108
+    assert by["你"]["settled_stake"] == 2058
+    assert by["你"]["pending_stake"] == 988
     # LYZ
     assert by["LYZ"]["settled_pnl"] == 378.43
     assert by["LYZ"]["settled"] == 3
