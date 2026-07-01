@@ -370,3 +370,116 @@ def test_auth_enforced_when_password_set(tmp_path):
     assert c.get("/api/state", auth=("u", "wrong")).status_code == 401
     # 正确密码 → 200
     assert c.get("/api/state", auth=("u", "secret")).status_code == 200
+
+
+def _iso_client(tmp_path):
+    """独立 data_dir/reports_dir 的 client, 不碰真仓库 data/reports(ingest 测试专用)。"""
+    cfg = load_config("nope.toml")
+    app = create_app(
+        db_path=str(tmp_path / "t.db"), cfg=cfg, require_auth=False,
+        data_dir=str(tmp_path / "data"), reports_dir=str(tmp_path / "reports"),
+    )
+    return TestClient(app)
+
+
+def test_ingest_tickets_full_and_partial_replace(tmp_path):
+    c = _iso_client(tmp_path)
+    body1 = {
+        "updated": "2026-07-01",
+        "recommendations": [{"date": "2026-07-01", "match": "m", "leg": "x", "odds": 2.0,
+                              "tier": "red", "value_poly": 0.9, "result": "win", "settled": True}],
+        "tickets": [{"date": "2026-07-01", "who": "HYN", "type": "t", "stake": 10,
+                     "legs_hit": "x", "pnl": None, "settled": False}],
+        "people": ["HYN"],
+    }
+    r = c.post("/api/ingest/tickets", json=body1)
+    assert r.status_code == 200
+    assert r.json() == {"accepted": True, "tickets": 1, "recommendations": 1}
+    assert c.get("/api/bets/summary").json()["tickets"]["count"] == 1
+
+    # 只发 tickets, 不带 recommendations → recommendations 保留服务器上原值(不被清空)
+    body2 = {"tickets": [
+        {"date": "2026-07-01", "who": "HYN", "type": "t", "stake": 10,
+         "legs_hit": "x", "pnl": None, "settled": False},
+        {"date": "2026-07-02", "who": "HYN", "type": "t2", "stake": 20,
+         "legs_hit": "y", "pnl": None, "settled": False},
+    ]}
+    r = c.post("/api/ingest/tickets", json=body2)
+    assert r.status_code == 200
+    assert r.json() == {"accepted": True, "tickets": 2, "recommendations": 1}
+    summary = c.get("/api/bets/summary").json()
+    assert summary["tickets"]["count"] == 2
+    assert summary["recommendations"]["total"] == 1  # 未被 body2 清空
+
+
+def test_ingest_tickets_rejects_bad_payload(tmp_path):
+    c = _iso_client(tmp_path)
+    assert c.post("/api/ingest/tickets", json=[1, 2, 3]).status_code == 400
+    assert c.post("/api/ingest/tickets", json={"tickets": "not-a-list"}).status_code == 400
+
+
+def test_ingest_reports_new_and_overwrite(tmp_path):
+    c = _iso_client(tmp_path)
+    r = c.post("/api/ingest/reports", json={"reports": [
+        {"name": "agents/wc-bet__下注复盘", "content": "# 复盘\n初版"},
+    ]})
+    assert r.status_code == 200
+    assert r.json() == {"accepted": True, "n": 1, "errors": []}
+    got = c.get("/api/reports/wc-bet__下注复盘")
+    assert got.status_code == 200
+    assert "初版" in got.json()["content"]
+
+    # 覆盖同一份报告
+    c.post("/api/ingest/reports", json={"reports": [
+        {"name": "agents/wc-bet__下注复盘", "content": "# 复盘\n新版"},
+    ]})
+    got = c.get("/api/reports/wc-bet__下注复盘")
+    assert "新版" in got.json()["content"]
+    # 新报告刚 ingest, 排在列表最前
+    listing = c.get("/api/reports").json()
+    assert listing[0]["name"] == "wc-bet__下注复盘"
+
+
+def test_ingest_reports_rejects_traversal_reports_error_not_500(tmp_path):
+    c = _iso_client(tmp_path)
+    r = c.post("/api/ingest/reports", json={"reports": [
+        {"name": "../evil", "content": "x"},
+        {"name": "ok", "content": "# OK\ny"},
+    ]})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["n"] == 1
+    assert len(body["errors"]) == 1
+    assert body["errors"][0]["name"] == "../evil"
+    assert c.get("/api/reports/ok").status_code == 200
+
+
+def test_ingest_reports_non_string_content_reports_error_not_500(tmp_path):
+    """content 误传成 list(容易手误的坑)不该让整批 500——单条进 errors, 其它条照常处理。"""
+    c = _iso_client(tmp_path)
+    r = c.post("/api/ingest/reports", json={"reports": [
+        {"name": "bad", "content": ["not", "a", "string"]},
+        {"name": "ok", "content": "# OK\ny"},
+    ]})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["n"] == 1
+    assert len(body["errors"]) == 1
+    assert body["errors"][0]["name"] == "bad"
+    assert c.get("/api/reports/ok").status_code == 200
+
+
+def test_ingest_endpoints_require_auth_when_password_set(tmp_path):
+    cfg = load_config("nope.toml")
+    cfg["server"]["password"] = "secret"
+    app = create_app(
+        db_path=str(tmp_path / "t.db"), cfg=cfg, require_auth=True,
+        data_dir=str(tmp_path / "data"), reports_dir=str(tmp_path / "reports"),
+    )
+    c = TestClient(app)
+    assert c.post("/api/ingest/tickets", json={"tickets": []}).status_code == 401
+    assert c.post("/api/ingest/reports", json={"reports": []}).status_code == 401
+    assert c.post("/api/ingest/tickets", json={"tickets": []},
+                   auth=("u", "secret")).status_code == 200
+    assert c.post("/api/ingest/reports", json={"reports": []},
+                   auth=("u", "secret")).status_code == 200

@@ -5,6 +5,7 @@
 """
 import json
 import os
+import tempfile
 
 _TIERS = ("green", "yellow", "red")
 
@@ -19,6 +20,27 @@ def load_ledger(data_dir: str = "data") -> dict:
     data.setdefault("recommendations", [])
     data.setdefault("tickets", [])
     return data
+
+
+def save_ledger(ledger: dict, data_dir: str = "data") -> None:
+    """原子写 data_dir/bet_ledger.json(同目录唯一临时名+os.replace)。
+
+    供 /api/ingest/tickets 用: 本地维护的台账直接 POST 落盘到这里, load_ledger 下次
+    请求现读即生效, 不需要经 git/部署。临时名用 tempfile.mkstemp 而不是固定的
+    "<path>.tmp"——固定名在两个写请求并发时会互相截断/找不到文件, 唯一名 + 同目录
+    (与目标文件同一文件系统, 保证 os.replace 是原子 rename)才是真正安全的写法。
+    """
+    os.makedirs(data_dir, exist_ok=True)
+    path = os.path.join(data_dir, "bet_ledger.json")
+    fd, tmp = tempfile.mkstemp(dir=data_dir, prefix=".bet_ledger.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(ledger, f, ensure_ascii=False, indent=2)
+            f.write("\n")
+        os.replace(tmp, path)
+    except BaseException:
+        os.unlink(tmp)
+        raise
 
 
 def _round(x: float, n: int = 4) -> float:
