@@ -906,15 +906,18 @@ function renderBetStats(s) {
   if (tbl) {
     tbl.innerHTML = "";
     const head = el("div", "tk-row tk-head");
-    ["日期", "谁", "票型", "注", "命中", "盈亏"].forEach((h, i) =>
+    ["期号", "谁", "票型", "注", "命中", "盈亏"].forEach((h, i) =>
       head.appendChild(el("span", "tk-c tk-c" + i, h)));
     tbl.appendChild(head);
-    // 明细表按日期倒序: 最新(今天)的票排最上面 (Array.sort 稳定, 同日保持入库顺序)
+    // 明细表按日期倒序: 最新(今天)的票排最上面 (Array.sort 稳定, 同日保持入库顺序)。
+    // 注意: 排序仍用 date(可靠的时间序), 不用 serial——竞彩(7位)和北单(5位)是两套
+    // 独立编号体系, 数值大小不对应先后, 混排数值排序会把顺序搞乱; serial 只用来显示。
     const _tixRows = (tix.rows || []).slice()
       .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
     for (const r of _tixRows) {
       const row = el("div", "tk-row");
-      row.appendChild(el("span", "tk-c tk-c0", (r.date || "").slice(5)));
+      // 期号缺失(如欧洲盘侧注, 无票面期号概念)回退显示日期(月-日)
+      row.appendChild(el("span", "tk-c tk-c0", r.serial || (r.date || "").slice(5)));
       row.appendChild(el("span", "tk-c tk-c1", r.who || ""));
       row.appendChild(el("span", "tk-c tk-c2", r.type || ""));
       row.appendChild(el("span", "tk-c tk-c3", fmtNum(r.stake)));
