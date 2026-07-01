@@ -15,8 +15,8 @@ def test_ledger_json_loads_and_totals():
     assert sum(1 for r in recs if r["settled"]) == 17
     assert sum(1 for r in recs if r["result"] == "pending") == 0
     assert sum(1 for r in recs if r["tier"] == "green") == 0
-    # 实购票现 54 张, 跨 5 人, 含待结(pnl=null); 补录漏记的期2607011(074-082)全组合票 +1
-    assert len(tix) == 54
+    # 实购票现 63 张, 跨 5 人, 含待结(pnl=null); 0701补录漏记7张+ZFW新增2张 +9
+    assert len(tix) == 63
     people = set(data["people"])
     assert people == PEOPLE
     for t in tix:
@@ -142,14 +142,14 @@ def test_full_ledger_tickets_global():
     """实购票全局聚合跑真数据, 锚定手算(待结/已结拆分)。"""
     from backend.bet_stats import load_ledger
     s = build_summary(load_ledger(str(REPO / "data")))["tickets"]
-    assert s["count"] == 54
+    assert s["count"] == 63
     assert s["settled_count"] == 51
-    assert s["pending_count"] == 3
+    assert s["pending_count"] == 12
     assert s["won"] == 10
     assert s["settled_stake"] == 4042
     assert s["settled_pnl"] == 496.92
     assert s["settled_roi"] == round(496.92 / 4042, 4)
-    assert s["pending_stake"] == 1102
+    assert s["pending_stake"] == 2070
 
 
 def test_full_ledger_tickets_by_person():
@@ -161,17 +161,17 @@ def test_full_ledger_tickets_by_person():
     # HYN(原"你")
     assert by["HYN"]["settled_pnl"] == 519.41
     assert by["HYN"]["settled"] == 21
-    assert by["HYN"]["pending"] == 2
+    assert by["HYN"]["pending"] == 4
     assert by["HYN"]["won"] == 5
     assert by["HYN"]["settled_stake"] == 2058
-    assert by["HYN"]["pending_stake"] == 988
+    assert by["HYN"]["pending_stake"] == 1590
     # LYZ
     assert by["LYZ"]["settled_pnl"] == 378.43
     assert by["LYZ"]["settled"] == 3
-    assert by["LYZ"]["pending"] == 1
+    assert by["LYZ"]["pending"] == 3
     assert by["LYZ"]["won"] == 1
     assert by["LYZ"]["settled_stake"] == 320
-    assert by["LYZ"]["pending_stake"] == 114
+    assert by["LYZ"]["pending_stake"] == 240
     # YBB(077-078·078三张实购票 R32 结算全中)
     assert by["YBB"]["settled_pnl"] == 444.81
     assert by["YBB"]["settled"] == 3
@@ -182,8 +182,9 @@ def test_full_ledger_tickets_by_person():
     # ZFW
     assert by["ZFW"]["settled_pnl"] == -191.68
     assert by["ZFW"]["settled"] == 7
-    assert by["ZFW"]["pending"] == 0
+    assert by["ZFW"]["pending"] == 2
     assert by["ZFW"]["settled_stake"] == 424
+    assert by["ZFW"]["pending_stake"] == 90
     # LYH
     assert by["LYH"]["settled_pnl"] == -654.05
     assert by["LYH"]["settled"] == 17
