@@ -3,7 +3,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 
-PEOPLE = {"你", "LYH", "ZFW", "LYZ", "YBB"}
+PEOPLE = {"HYN", "LYH", "ZFW", "LYZ", "YBB"}
 
 
 def test_ledger_json_loads_and_totals():
@@ -156,15 +156,15 @@ def test_full_ledger_tickets_by_person():
     """by_person 跑真数据: 顺序 + 每人数值锚定。"""
     from backend.bet_stats import load_ledger
     bp = build_summary(load_ledger(str(REPO / "data")))["tickets"]["by_person"]
-    assert [p["who"] for p in bp] == ["你", "YBB", "LYZ", "ZFW", "LYH"]
+    assert [p["who"] for p in bp] == ["HYN", "YBB", "LYZ", "ZFW", "LYH"]
     by = {p["who"]: p for p in bp}
-    # 你
-    assert by["你"]["settled_pnl"] == 519.41
-    assert by["你"]["settled"] == 21
-    assert by["你"]["pending"] == 2
-    assert by["你"]["won"] == 5
-    assert by["你"]["settled_stake"] == 2058
-    assert by["你"]["pending_stake"] == 988
+    # HYN(原"你")
+    assert by["HYN"]["settled_pnl"] == 519.41
+    assert by["HYN"]["settled"] == 21
+    assert by["HYN"]["pending"] == 2
+    assert by["HYN"]["won"] == 5
+    assert by["HYN"]["settled_stake"] == 2058
+    assert by["HYN"]["pending_stake"] == 988
     # LYZ
     assert by["LYZ"]["settled_pnl"] == 378.43
     assert by["LYZ"]["settled"] == 3
