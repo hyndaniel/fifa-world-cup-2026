@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from backend.reports import list_reports, read_report
+from backend.reports import bump_time, list_reports, read_report, write_report
 
 
 def test_orders_by_manifest_when_mtimes_equal(tmp_path):
@@ -85,3 +85,44 @@ def test_read_report_rejects_traversal_and_glob(tmp_path):
     # 下划线目录里的报告不可经 read_report 取出 (与列表口径一致)
     with pytest.raises(FileNotFoundError):
         read_report("dead", str(tmp_path))
+
+
+def test_write_report_creates_subdir_and_readable_back(tmp_path):
+    """write_report 允许斜杠指定子目录(与 read_report 不同, 供 ingest 新报告落对目录);
+    落盘后能被 read_report(用 stem)读回。"""
+    stem = write_report("agents/wc-bet__下注复盘", "# 复盘\n正文", str(tmp_path))
+    assert stem == "wc-bet__下注复盘"
+    assert (tmp_path / "agents" / "wc-bet__下注复盘.md").exists()
+    assert "正文" in read_report("wc-bet__下注复盘", str(tmp_path))
+
+
+def test_write_report_overwrites_existing(tmp_path):
+    write_report("r", "# R\n旧内容", str(tmp_path))
+    write_report("r", "# R\n新内容", str(tmp_path))
+    assert read_report("r", str(tmp_path)) == "# R\n新内容"
+
+
+def test_write_report_rejects_traversal(tmp_path):
+    for bad in ["../secret", "a/../../b", "..", "*", "a?b", ""]:
+        with pytest.raises(ValueError):
+            write_report(bad, "x", str(tmp_path))
+    # 越界写入没有留下任何文件
+    assert not (tmp_path.parent / "secret.md").exists()
+
+
+def test_write_report_rejects_non_string_content(tmp_path):
+    """content 误传成 list/数字/布尔 → ValueError(不是 Path.write_text 的 TypeError),
+    这样 /api/ingest/reports 现有的 except ValueError 才能兜住, 不至于整批 500。"""
+    for bad_content in [["not", "a", "string"], 123, True, {"k": "v"}]:
+        with pytest.raises(ValueError):
+            write_report("r", bad_content, str(tmp_path))
+    assert not (tmp_path / "r.md").exists()
+
+
+def test_bump_time_sets_and_overrides_manifest_entry(tmp_path):
+    (tmp_path / "report_times.json").write_text(
+        json.dumps({"old": 1000}), encoding="utf-8"
+    )
+    bump_time("new", str(tmp_path), ts=1700000000)
+    times = json.loads((tmp_path / "report_times.json").read_text(encoding="utf-8"))
+    assert times == {"old": 1000, "new": 1700000000}

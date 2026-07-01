@@ -1,14 +1,21 @@
-"""读 reports/*.md (列表 + 单篇内容)。
+"""读 reports/*.md (列表 + 单篇内容) + 写(供 /api/ingest/reports 落盘)。
 
 - list_reports(reports_dir="reports") -> list[{name, title}]
     name: 不含 .md 后缀的文件名 (URL 安全标识);
     title: 文件里第一个 "# " 一级标题, 缺则回退到 name。
 - read_report(name, reports_dir="reports") -> str
     返回该 .md 文本; 防目录穿越 (name 不得含路径分隔/.. , 解析后必须仍落在 reports_dir 内)。
+- write_report(name, content, reports_dir="reports") -> str
+    落盘 reports/<name>.md(name 可含子目录如 "agents/xxx", 自动建目录); 防目录穿越
+    (仅挡 ".."/绝对路径越界, 与 read_report 不同, 这里**允许**斜杠指定子目录, 否则
+    没法给新报告选落哪个子目录); 返回写入文件的 stem, 供调用方联动刷新 report_times。
+- bump_time(name_stem, reports_dir="reports", ts=None) -> None
+    把 report_times.json 里该报告的时间戳刷成 ts(默认当前时刻)。
 """
 import json
 import pathlib
 import subprocess
+import time
 
 
 def _load_times(reports_dir):
@@ -19,6 +26,62 @@ def _load_times(reports_dir):
         return data if isinstance(data, dict) else {}
     except (OSError, ValueError):
         return {}
+
+
+def _save_times(reports_dir, times):
+    p = pathlib.Path(reports_dir) / "report_times.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(times, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def bump_time(name_stem, reports_dir="reports", ts=None):
+    """把 report_times.json 里 name_stem 的时间戳刷成 ts(默认当前时刻)。
+
+    ingest 落盘走 HTTP、不经 git commit, list_reports 排序原本靠"构建期清单优先、
+    其次 git 提交时间"两级兜底——ingest 场景两者都没有(没打 tag/没 git commit),
+    所以必须显式刷这份清单, 否则新报告排序会退到文件 mtime(能用但不如清单精确)。
+    """
+    times = _load_times(reports_dir)
+    times[name_stem] = ts if ts is not None else time.time()
+    _save_times(reports_dir, times)
+
+
+def _safe_write_target(name, reports_dir):
+    """校验+解析 write_report 的落盘路径。
+
+    与 read_report 的校验不同: **允许**斜杠(指定子目录, 如 "agents/xxx"), 只挡
+    ".."/绝对路径/空字符等真正的越界写法; 解析后仍须落在 reports_dir 内(双保险)。
+    """
+    if name is None:
+        raise ValueError("report name required")
+    name = str(name)
+    if name.endswith(".md"):
+        name = name[:-3]
+    if not name or "\x00" in name or "*" in name or "?" in name or "[" in name:
+        raise ValueError(f"invalid report name: {name!r}")
+    parts = name.replace("\\", "/").split("/")
+    if any(p in ("", ".", "..") for p in parts):
+        raise ValueError(f"invalid report name: {name!r}")
+    base = pathlib.Path(reports_dir).resolve()
+    target = (base / (name + ".md")).resolve()
+    if base != target and base not in target.parents:
+        raise ValueError(f"invalid report name: {name!r}")
+    return target
+
+
+def write_report(name, content, reports_dir="reports"):
+    """落盘 reports/<name>.md(自动建子目录), 返回写入文件的 stem。
+
+    content 非字符串(如客户端误传成 list/数字)统一转成 ValueError, 而不是让
+    Path.write_text 抛 TypeError——调用方(/api/ingest/reports)按条 catch ValueError
+    隔离单条失败, 不该因为类型不对就让整批 500。
+    """
+    if not isinstance(content, str):
+        raise ValueError(f"content must be str, got {type(content).__name__}")
+    target = _safe_write_target(name, reports_dir)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content, encoding="utf-8")
+    return target.stem
 
 
 def _git_ts(path):

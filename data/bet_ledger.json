@@ -175,70 +175,77 @@
   "tickets": [
     {
       "date": "2026-06-13",
-      "who": "你",
+      "who": "HYN",
       "type": "比分2串1(003-04)",
       "stake": 30,
       "legs_hit": "1/2",
       "pnl": -30,
-      "settled": true
+      "settled": true,
+      "serial": "2606121"
     },
     {
       "date": "2026-06-13",
-      "who": "你",
+      "who": "HYN",
       "type": "混合8串1(001-08)",
       "stake": 80,
       "legs_hit": "3/8",
       "pnl": -80,
-      "settled": true
+      "settled": true,
+      "serial": "2606131"
     },
     {
       "date": "2026-06-14",
-      "who": "你",
+      "who": "HYN",
       "type": "混合4串1(005-08)",
       "stake": 40,
       "legs_hit": "1/4",
       "pnl": -40,
-      "settled": true
+      "settled": true,
+      "serial": "2606131"
     },
     {
       "date": "2026-06-15",
-      "who": "你",
+      "who": "HYN",
       "type": "混合4串1(009-12)",
       "stake": 50,
       "legs_hit": "2/4",
       "pnl": -50,
-      "settled": true
+      "settled": true,
+      "serial": "2606141"
     },
     {
       "date": "2026-06-17",
-      "who": "你",
+      "who": "HYN",
       "type": "混合4串1(017-22)",
       "stake": 100,
       "legs_hit": "4/4",
       "pnl": 1350.5,
-      "settled": true
+      "settled": true,
+      "serial": "2606171"
     },
     {
       "date": "2026-06-19",
-      "who": "你",
+      "who": "HYN",
       "type": "混合8串1(030-39)",
       "stake": 100,
       "legs_hit": "5/8",
       "pnl": -100,
-      "settled": true
+      "settled": true,
+      "serial": "2606211"
     },
     {
       "date": "2026-06-23",
-      "who": "你",
+      "who": "HYN",
       "type": "让球4串1(041-46)",
       "stake": 400,
       "legs_hit": "3/4",
       "pnl": -400,
-      "settled": true
+      "settled": true,
+      "serial": "2606231"
     },
     {
       "date": "2026-06-24",
-      "who": "你",
+      "who": "HYN",
       "type": "欧洲盘 加纳+2.5 单关",
       "stake": 300,
       "legs_hit": "中",
@@ -247,70 +254,77 @@
     },
     {
       "date": "2026-06-25",
-      "who": "你",
+      "who": "HYN",
       "type": "比分6串1(049-54)",
       "stake": 30,
       "legs_hit": "0/6",
       "pnl": -30,
-      "settled": true
+      "settled": true,
+      "serial": "2606241"
     },
     {
       "date": "2026-06-25",
-      "who": "你",
+      "who": "HYN",
       "type": "让球6串1(049-54)",
       "stake": 30,
       "legs_hit": "2/6",
       "pnl": -30,
-      "settled": true
+      "settled": true,
+      "serial": "2606241"
     },
     {
       "date": "2026-06-26",
-      "who": "你",
+      "who": "HYN",
       "type": "混合3关复式(055-60)",
       "stake": 100,
       "legs_hit": "中{056,059,060}",
       "pnl": 13.0,
-      "settled": true
+      "settled": true,
+      "serial": "2606251"
     },
     {
       "date": "2026-06-26",
-      "who": "你",
+      "who": "HYN",
       "type": "北单5场3关复式",
       "stake": 100,
       "legs_hit": "盈利",
       "pnl": 255.78,
-      "settled": true
+      "settled": true,
+      "serial": "26068"
     },
     {
       "date": "2026-06-26",
-      "who": "你",
+      "who": "HYN",
       "type": "北单6场4关复式",
       "stake": 132,
       "legs_hit": "没中",
       "pnl": -132.0,
-      "settled": true
+      "settled": true,
+      "serial": "26068"
     },
     {
       "date": "2026-06-27",
-      "who": "你",
+      "who": "HYN",
       "type": "混合4关复式(061-66)",
       "stake": 100,
       "legs_hit": "2/6",
       "pnl": -100,
-      "settled": true
+      "settled": true,
+      "serial": "2606261"
     },
     {
       "date": "2026-06-28",
-      "who": "你",
+      "who": "HYN",
       "type": "混合2-6关复式(067-72)",
       "stake": 114,
       "legs_hit": "3/6",
       "pnl": 66.72,
-      "settled": true
+      "settled": true,
+      "serial": "2606271"
     },
     {
       "date": "2026-06-30",
-      "who": "你",
+      "who": "HYN",
       "type": "混合2-8关全组合(077-084·247注)",
       "stake": 494,
       "legs_hit": "077✅(负) 078✅(胜) 079让1❌(墨2:0厄让1后仍主胜,负腿败);080-084待结",
@@ -333,7 +347,7 @@
     },
     {
       "date": "2026-06-29",
-      "who": "你",
+      "who": "HYN",
       "type": "混合2-8关全组合(074-082·247注)",
       "stake": 494,
       "legs_hit": "074✅(胜,巴西2:1日本) 075让1❌(德巴1:1平,让1后客队赢盘,胜腿败) 077✅(负) 078让1✅(胜) 079✅(胜);080-082待结",
@@ -356,7 +370,7 @@
     },
     {
       "date": "2026-06-30",
-      "who": "你",
+      "who": "HYN",
       "type": "半全场2-4复式(073-078)",
       "stake": 120,
       "serial": "2606301",
@@ -376,12 +390,13 @@
     },
     {
       "date": "2026-06-30",
-      "who": "你",
+      "who": "HYN",
       "type": "混合8串1(061-073)",
       "stake": 20,
       "legs_hit": "066新让胜挂·全损",
       "pnl": -20,
-      "settled": true
+      "settled": true,
+      "serial": "2606281"
     },
     {
       "date": "2026-06-28",
@@ -390,7 +405,8 @@
       "stake": 114,
       "legs_hit": "4/6",
       "pnl": 584.43,
-      "settled": true
+      "settled": true,
+      "serial": "2606271"
     },
     {
       "date": "2026-06-29",
@@ -399,7 +415,8 @@
       "stake": 108,
       "legs_hit": "1/4",
       "pnl": -108,
-      "settled": true
+      "settled": true,
+      "serial": "2606291"
     },
     {
       "date": "2026-06-30",
@@ -408,7 +425,8 @@
       "stake": 98,
       "legs_hit": "1/3",
       "pnl": -98,
-      "settled": true
+      "settled": true,
+      "serial": "2606291"
     },
     {
       "date": "2026-06-25",
@@ -417,7 +435,8 @@
       "stake": 82,
       "legs_hit": "2/6",
       "pnl": -82,
-      "settled": true
+      "settled": true,
+      "serial": "2606241"
     },
     {
       "date": "2026-06-26",
@@ -426,7 +445,8 @@
       "stake": 50,
       "legs_hit": "2/6",
       "pnl": -50,
-      "settled": true
+      "settled": true,
+      "serial": "2606251"
     },
     {
       "date": "2026-06-27",
@@ -435,7 +455,8 @@
       "stake": 82,
       "legs_hit": "4/6",
       "pnl": -60.57,
-      "settled": true
+      "settled": true,
+      "serial": "2606261"
     },
     {
       "date": "2026-06-27",
@@ -444,7 +465,8 @@
       "stake": 60,
       "legs_hit": "1/6",
       "pnl": -60,
-      "settled": true
+      "settled": true,
+      "serial": "2606261"
     },
     {
       "date": "2026-06-30",
@@ -453,7 +475,8 @@
       "stake": 50,
       "legs_hit": "0/3",
       "pnl": -50,
-      "settled": true
+      "settled": true,
+      "serial": "2606291"
     },
     {
       "date": "2026-06-30",
@@ -462,7 +485,8 @@
       "stake": 50,
       "legs_hit": "1/3",
       "pnl": -50,
-      "settled": true
+      "settled": true,
+      "serial": "2606291"
     },
     {
       "date": "2026-06-23",
@@ -471,7 +495,8 @@
       "stake": 20,
       "legs_hit": "0/2",
       "pnl": -20,
-      "settled": true
+      "settled": true,
+      "serial": "2606231"
     },
     {
       "date": "2026-06-23",
@@ -489,7 +514,8 @@
       "stake": 40,
       "legs_hit": "平胜·避开",
       "pnl": -40,
-      "settled": true
+      "settled": true,
+      "serial": "2606241"
     },
     {
       "date": "2026-06-25",
@@ -498,7 +524,8 @@
       "stake": 50,
       "legs_hit": "胜胜·避开",
       "pnl": -50,
-      "settled": true
+      "settled": true,
+      "serial": "2606241"
     },
     {
       "date": "2026-06-25",
@@ -507,7 +534,8 @@
       "stake": 30,
       "legs_hit": "0/6",
       "pnl": -30,
-      "settled": true
+      "settled": true,
+      "serial": "2606241"
     },
     {
       "date": "2026-06-25",
@@ -525,7 +553,8 @@
       "stake": 10,
       "legs_hit": "3/5",
       "pnl": -10,
-      "settled": true
+      "settled": true,
+      "serial": "2606271"
     },
     {
       "date": "2026-06-28",
@@ -534,7 +563,8 @@
       "stake": 20,
       "legs_hit": "3/5",
       "pnl": -20,
-      "settled": true
+      "settled": true,
+      "serial": "2606271"
     },
     {
       "date": "2026-06-28",
@@ -543,7 +573,8 @@
       "stake": 32,
       "legs_hit": "4/5",
       "pnl": -32,
-      "settled": true
+      "settled": true,
+      "serial": "2606271"
     },
     {
       "date": "2026-06-29",
@@ -552,7 +583,8 @@
       "stake": 48,
       "legs_hit": "1/3",
       "pnl": -48,
-      "settled": true
+      "settled": true,
+      "serial": "2606291"
     },
     {
       "date": "2026-06-30",
@@ -561,7 +593,8 @@
       "stake": 48,
       "legs_hit": "1/3",
       "pnl": -48,
-      "settled": true
+      "settled": true,
+      "serial": "2606291"
     },
     {
       "date": "2026-06-29",
@@ -570,7 +603,8 @@
       "stake": 20,
       "legs_hit": "0-1负·选胜/平挂",
       "pnl": -20,
-      "settled": true
+      "settled": true,
+      "serial": "2606281"
     },
     {
       "date": "2026-06-29",
@@ -579,7 +613,8 @@
       "stake": 36,
       "legs_hit": "平负·未选",
       "pnl": -36,
-      "settled": true
+      "settled": true,
+      "serial": "2606281"
     },
     {
       "date": "2026-06-29",
@@ -588,7 +623,8 @@
       "stake": 28,
       "legs_hit": "0-1·未选",
       "pnl": -28,
-      "settled": true
+      "settled": true,
+      "serial": "2606281"
     },
     {
       "date": "2026-06-30",
@@ -597,11 +633,12 @@
       "stake": 70,
       "legs_hit": "2/3·中074让平×076平",
       "pnl": 20.81,
-      "settled": true
+      "settled": true,
+      "serial": "2606291"
     },
     {
       "date": "2026-06-30",
-      "who": "你",
+      "who": "HYN",
       "type": "欧洲盘波胆 2-0单关(075德-巴)",
       "stake": 20,
       "legs_hit": "1-1≠2-0",
@@ -610,7 +647,7 @@
     },
     {
       "date": "2026-06-30",
-      "who": "你",
+      "who": "HYN",
       "type": "欧洲盘波胆 2-1单关(076荷-摩)",
       "stake": 20,
       "legs_hit": "1-1≠2-1",
@@ -619,7 +656,7 @@
     },
     {
       "date": "2026-06-30",
-      "who": "你",
+      "who": "HYN",
       "type": "比分3串1(077-079·18注·2倍)",
       "stake": 72,
       "serial": "2606301",
@@ -636,7 +673,7 @@
     },
     {
       "date": "2026-06-30",
-      "who": "你",
+      "who": "HYN",
       "type": "混合3串1×50倍(077-079)",
       "stake": 100,
       "serial": "2606301",
@@ -940,7 +977,7 @@
     }
   ],
   "people": [
-    "你",
+    "HYN",
     "LYH",
     "ZFW",
     "LYZ",
