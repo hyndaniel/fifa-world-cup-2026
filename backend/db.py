@@ -94,9 +94,13 @@ class Db:
         self.path = str(path)
 
     def _conn(self):
-        conn = sqlite3.connect(self.path)
+        # timeout: poller/enrich/web/后台 ingest 多线程写同一库, 默认 5s 易抛
+        # "database is locked"; WAL 让读写不互斥, busy_timeout 兜住写写竞争。
+        conn = sqlite3.connect(self.path, timeout=15)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=15000")
         return conn
 
     def init(self):

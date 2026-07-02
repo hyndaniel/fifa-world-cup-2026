@@ -202,7 +202,8 @@ def compute_value(z: ZucaiMatch, p: PolyProbs, yellow_below=1.03) -> list[ValueP
 
     # --- hhad 让球 ---
     hh = z.hhad or {}
-    if hh.get("h"):
+    if hh.get("h") and hh.get("line") is not None:
+        # sporttery goalLine 缺失/不可解析时 line=None 而 h/d/a 仍有值 → 跳过让球盘
         L = int(hh["line"])
         tag = f"让{L:+d}"
         win_lbl = "主" + ("让" if L < 0 else "受") + "胜"

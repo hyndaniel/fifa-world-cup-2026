@@ -10,11 +10,14 @@
     - ou_over:   {goalline(float): over%}           例 {0.5:98.4, 2.5:73.5}
 """
 import json
+import logging
 import re
 
 import httpx
 
 from .models import PolyProbs
+
+log = logging.getLogger(__name__)
 
 GAMMA = "https://gamma-api.polymarket.com"
 WC_TAG = "102232"  # FIFA World Cup tag
@@ -33,7 +36,9 @@ def _default_fetcher(path: str) -> list:
                       timeout=30, follow_redirects=True)
         r.raise_for_status()
         return r.json()
-    except Exception:
+    except Exception as e:  # noqa: BLE001 — 降级返回 [], 但必须留痕:
+        # 否则 403/超时/DNS 故障在下游全变成 "poly 无对应 slug" 假象, 排障无从下手
+        log.warning("poly fetch 失败 %s: %s: %s", url, type(e).__name__, e)
         return []
 
 
