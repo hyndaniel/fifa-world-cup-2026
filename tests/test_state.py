@@ -108,6 +108,11 @@ def test_value_radar_excludes_expired_match():
 
     真实场景: 南非 vs 韩国 6.25 开球, 但赔率没刷新, 陈旧盘口算出 EV +186%,
     因不过期而一直钉死在雷达最上面(看板"南非vs韩国"常驻置顶的根因)。
+
+    ko_bj 特意用 "YYYY-MM-DD HH:MM:SS"(matches 表的真实生产格式, 经查线上
+    wc.db 核实), 而非 decisions 表的 "M.D HH:MM"——此前 parse_ko_dt 只认
+    后者, 用前一种格式复现时这条回归测不出问题(误判已修复), 排查"部署后
+    没变化"时才发现两张表格式不同这个更深的根因。
     """
     import tempfile, os
     fd, path = tempfile.mkstemp(suffix=".db")
@@ -118,7 +123,7 @@ def test_value_radar_excludes_expired_match():
     stale_mid = db.upsert_match(
         zucai_num="周一099", home_cn="南非", away_cn="韩国",
         home_en="South Africa", away_en="South Korea", poly_slug="fifwc-rsa-kor-2026-06-25",
-        ko_bj="6.25 09:00", cutoff_bj="08:00",
+        ko_bj="2026-06-25 09:00:00", cutoff_bj="08:00",
     )
     fresh_mid = db.upsert_match(
         zucai_num="周三101", home_cn="英格兰", away_cn="加纳",

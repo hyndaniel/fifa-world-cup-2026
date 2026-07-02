@@ -64,11 +64,21 @@ DECAY_H = 6  # 决策卡/今日场次: 开球后保留小时数, 超过即衰减
 
 
 def parse_ko_dt(ko_bj, now_bj):
-    """ "M.D HH:MM" -> 北京 aware datetime(年份取 now_bj.year); 无法解析 -> None。
+    """开球时刻 -> 北京 aware datetime; 无法解析 -> None。
 
-    以开球时刻为锚, 跨北京午夜的夜场(ko_bj 带次日日期前缀)天然连续。
+    两种格式并存, 按来源表区分:
+    - "M.D HH:MM"(decisions 表, 每日预测管线写入): 年份取 now_bj.year,
+      以开球时刻为锚, 跨北京午夜的夜场(ko_bj 带次日日期前缀)天然连续。
+    - "YYYY-MM-DD HH:MM[:SS]"(matches 表, 赛程/赔率导入写入): 自带年份直接解析。
     """
     s = str(ko_bj or "").strip()
+    if not s:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+        try:
+            return datetime.strptime(s, fmt).replace(tzinfo=BJ)
+        except ValueError:
+            pass
     parts = s.split(" ")
     if len(parts) != 2 or "." not in parts[0] or ":" not in parts[1]:
         return None
