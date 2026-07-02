@@ -68,6 +68,20 @@ def test_live_subdir_md_included_in_list(tmp_path):
     assert "三方跑分卡" in titles  # H1 标题正常解析(跨子目录)
 
 
+def test_dir_field_is_top_level_subdir(tmp_path):
+    """每条报告带 dir = reports/ 下顶层子目录 (供前端分类导航); 根目录报告 dir=''。"""
+    (tmp_path / "match-sims").mkdir()
+    (tmp_path / "match-sims" / "比赛模拟-加拿大vs摩洛哥-2026-07-04.md").write_text(
+        "# 比赛模拟\n", encoding="utf-8")
+    (tmp_path / "intel").mkdir()
+    (tmp_path / "intel" / "2026-07-02__赛前情报-R32.md").write_text("# 情报\n", encoding="utf-8")
+    (tmp_path / "根级报告.md").write_text("# 根\n", encoding="utf-8")
+    dirs = {r["name"]: r["dir"] for r in list_reports(str(tmp_path))}
+    assert dirs["比赛模拟-加拿大vs摩洛哥-2026-07-04"] == "match-sims"
+    assert dirs["2026-07-02__赛前情报-R32"] == "intel"
+    assert dirs["根级报告"] == ""  # 根目录报告顶层子目录为空
+
+
 def test_read_report_resolves_subdir_by_stem(tmp_path):
     """read_report 用 stem (无斜杠) 取到子目录里的报告 → 前端 URL/路由不变。"""
     (tmp_path / "intel").mkdir()
