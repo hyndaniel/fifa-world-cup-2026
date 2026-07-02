@@ -17,11 +17,15 @@ def _ko_bj(dt):
 
 
 def _seed(db):
-    """一场比赛 + value_points(green/yellow/skip) + watchlist + 一笔 bet。"""
+    """一场比赛 + value_points(green/yellow/skip) + watchlist + 一笔 bet。
+
+    ko_bj 取相对 now 的未来值(始终 upcoming, 不被 value_radar 的过期过滤挡掉),
+    避免硬编码日期随墙钟过期 (见 backend.state.ko_status / build_state value_radar)。
+    """
     mid = db.upsert_match(
         zucai_num="周一013", home_cn="西班牙", away_cn="佛得角",
         home_en="Spain", away_en="Cabo Verde", poly_slug="fifwc-esp-cvi-2026-06-15",
-        ko_bj="6.16 00:00", cutoff_bj="23:00",
+        ko_bj=_ko_bj(datetime.now(BJ) + timedelta(hours=1)), cutoff_bj="23:00",
     )
     db.save_value_points(mid, [
         {"market": "胜平负", "outcome": "主胜", "zucai_odds": 1.41,
