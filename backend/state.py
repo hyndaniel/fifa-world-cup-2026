@@ -2,6 +2,7 @@
 
 build_state(db, cfg, now_bj) -> dict:
   - value_radar: 取每场最新一批 value_points 中 flag∈{green,yellow} (排除 skip),
+                 排除已过期比赛(开球超 DECAY_H 小时, 同 matches_today 口径),
                  按 ev_pct (去水) 降序; 每项带 match 名 + ko_bj + cutoff_bj。
   - next_cutoff: 未停售 (status!='Stopped') 的场里, cutoff 时刻 >= now 的最近一个 + 倒计时秒。
   - watchlist:   各 pin 项 (队/场/人) 富化: 关联场次 matches + 阵容 lineup + 新闻 news
@@ -282,13 +283,17 @@ def build_state(db, cfg, now_bj=None) -> dict:
     matches = db.matches()
     by_id = {m["id"]: m for m in matches}
 
-    # ---- value_radar: 最新一批, 排除 skip, 按 ev_pct(去水) 降序 ----
+    # ---- value_radar: 最新一批, 排除 skip + 已过期比赛(开球超 DECAY_H 小时), 按 ev_pct(去水) 降序 ----
     vps = db.latest_value_points()
-    radar = [
-        _radar_item(vp, by_id.get(vp.get("match_id")))
-        for vp in vps
-        if vp.get("flag") in ("green", "yellow")
-    ]
+    radar = []
+    for vp in vps:
+        if vp.get("flag") not in ("green", "yellow"):
+            continue
+        match = by_id.get(vp.get("match_id"))
+        status, _dt = ko_status(match.get("ko_bj") if match else None, now_bj)
+        if status == "expired":
+            continue
+        radar.append(_radar_item(vp, match))
     radar.sort(key=lambda x: (x["ev_pct_devig"] is None, -(x["ev_pct_devig"] or 0.0)))
 
     # ---- next_cutoff: 未停售里 cutoff >= now 的最近一个 ----

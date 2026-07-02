@@ -61,8 +61,23 @@ def test_state_shape_top_level():
         assert k in st
 
 
+def _radar_state():
+    """value_radar 排序/字段测试专用 seed: now 选在两场开球之前(始终 upcoming),
+    不触发 value_radar 的过期过滤 —— 与 _state() 的 now(刻意让两场已过 DECAY_H,
+    供 next_cutoff/matches_today 测试用)分开, 避免互相牵制。"""
+    import tempfile, os
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    db = Db(path)
+    db.init()
+    _seed(db)
+    cfg = load_config("nope.toml")
+    now = datetime(2026, 6, 15, 23, 0, tzinfo=BJ)  # 早于两场开球(6.16 00:00/03:00)
+    return build_state(db, cfg, now), db, path
+
+
 def test_value_radar_sorted_and_filtered():
-    st, db, path = _state()
+    st, db, path = _radar_state()
     radar = st["value_radar"]
     # skip 被排除: 只剩 3 条 (green/yellow)
     assert len(radar) == 3
@@ -76,7 +91,7 @@ def test_value_radar_sorted_and_filtered():
 
 
 def test_radar_item_fields_and_match_name():
-    st, db, path = _state()
+    st, db, path = _radar_state()
     top = st["value_radar"][0]
     for k in ("match", "ko_bj", "market", "outcome", "zucai_odds",
               "poly_prob_devig", "poly_prob_raw", "ev_pct_devig",
@@ -86,6 +101,48 @@ def test_radar_item_fields_and_match_name():
     assert top["cutoff_bj"] == "23:00"
     # ev_pct_raw 由 value_raw 派生: (1.290-1)*100 = 29.0
     assert abs(top["ev_pct_raw"] - 29.0) < 0.01
+
+
+def test_value_radar_excludes_expired_match():
+    """回归: 已踢完一周多的场次(陈旧赔率算出离谱 EV) 不该再霸榜 value_radar。
+
+    真实场景: 南非 vs 韩国 6.25 开球, 但赔率没刷新, 陈旧盘口算出 EV +186%,
+    因不过期而一直钉死在雷达最上面(看板"南非vs韩国"常驻置顶的根因)。
+    """
+    import tempfile, os
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    db = Db(path)
+    db.init()
+
+    stale_mid = db.upsert_match(
+        zucai_num="周一099", home_cn="南非", away_cn="韩国",
+        home_en="South Africa", away_en="South Korea", poly_slug="fifwc-rsa-kor-2026-06-25",
+        ko_bj="6.25 09:00", cutoff_bj="08:00",
+    )
+    fresh_mid = db.upsert_match(
+        zucai_num="周三101", home_cn="英格兰", away_cn="加纳",
+        home_en="England", away_en="Ghana", poly_slug="fifwc-eng-gha-2026-07-02",
+        ko_bj="7.2 20:00", cutoff_bj="19:00",
+    )
+    db.save_value_points(stale_mid, [
+        {"market": "总进球", "outcome": "7+球", "zucai_odds": 37.0,
+         "poly_prob_raw": 7.8, "poly_prob_devig": 7.8,
+         "value_raw": 2.886, "value_devig": 2.868, "ev_pct": 186.8, "flag": "green"},
+    ])
+    db.save_value_points(fresh_mid, [
+        {"market": "胜平负", "outcome": "英格兰", "zucai_odds": 1.90,
+         "poly_prob_raw": 58.0, "poly_prob_devig": 57.0,
+         "value_raw": 1.062, "value_devig": 1.062, "ev_pct": 6.2, "flag": "green"},
+    ])
+    cfg = load_config("nope.toml")
+    now = datetime(2026, 7, 2, 15, 0, tzinfo=BJ)  # 南非vs韩国已过期 7 天+, 远超 DECAY_H=6h
+
+    st = build_state(db, cfg, now)
+    radar = st["value_radar"]
+
+    assert len(radar) == 1
+    assert radar[0]["match"] == "英格兰 vs 加纳"
 
 
 def test_next_cutoff_countdown():
