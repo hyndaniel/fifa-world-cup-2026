@@ -157,7 +157,10 @@ def list_reports(reports_dir="reports"):
             # 坏编码不应拖垮整个列表接口, 回退到文件名当标题
             pass
         mtime = _resolve_ts(name, p, times)
-        out.append({"name": name, "title": title, "mtime": mtime})
+        # dir = reports/ 下的顶层子目录 (match-sims/intel/agents/scoring); 根目录报告为 ""。
+        # 前端据此把报告分类导航 (比赛模拟/赛前情报/预测台账/跑分卡)。
+        top = rel.parts[0] if len(rel.parts) > 1 else ""
+        out.append({"name": name, "title": title, "mtime": mtime, "dir": top})
     # 最新生成/更新的报告排最前
     out.sort(key=lambda r: r["mtime"], reverse=True)
     return out

@@ -1002,19 +1002,51 @@ function reportMtimeMs(r) {
   const m = r && typeof r === "object" ? Number(r.mtime) : NaN;
   return Number.isFinite(m) && m > 0 ? m * 1000 : 0;
 }
-function dayKey(d) { return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; }
-function dayLabel(ms) {
-  if (!ms) return "未知时间";
-  const d = new Date(ms), now = new Date(), yest = new Date(now);
-  yest.setDate(now.getDate() - 1);
-  if (dayKey(d) === dayKey(now)) return "今天";
-  if (dayKey(d) === dayKey(yest)) return "昨天";
-  return `${d.getMonth() + 1}月${d.getDate()}日`;
-}
-function hhmm(ms) {
+function reportDir(r) { return r && typeof r === "object" ? (r.dir || "") : ""; }
+
+// 类目定义: dir → {icon, label}; 数组顺序即 pill 显示顺序。
+const REPORT_CATS = [
+  { dir: "match-sims", icon: "🎲", label: "比赛模拟" },
+  { dir: "intel",      icon: "🔍", label: "赛前情报" },
+  { dir: "agents",     icon: "📊", label: "预测与台账" },
+  { dir: "scoring",    icon: "🎯", label: "跑分卡" },
+];
+const REPORT_CAT_OTHER = { dir: "", icon: "📄", label: "其他" };
+function knownCat(dir) { return REPORT_CATS.some((c) => c.dir === dir); }
+
+// 列表右侧日期 MM-DD: 优先文件名里的日期(开赛日/情报日, 比部署 mtime 更贴合), 回退 mtime。
+function reportDate(r) {
+  const m = String(reportName(r)).match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[2]}-${m[3]}`;
+  const ms = reportMtimeMs(r);
   if (!ms) return "";
   const d = new Date(ms), p = (n) => String(n).padStart(2, "0");
-  return `${p(d.getHours())}:${p(d.getMinutes())}`;
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+// 类目内排序键: 日期为主(倒序), mtime 为次; 无日期(台账/跑分)纯按 mtime。
+function reportSortKey(r) {
+  const m = String(reportName(r)).match(/(\d{4})-(\d{2})-(\d{2})/);
+  const mt = reportMtimeMs(r);
+  return m ? Number(m[1] + m[2] + m[3]) * 1e13 + mt : mt;
+}
+// 列表左侧主标签(按类目清理, 解析失败一律退回 H1 标题, 不炸)。
+function reportLabel(r) {
+  const dir = reportDir(r), name = reportName(r), title = reportTitle(r);
+  if (dir === "match-sims") {
+    // "比赛模拟-加拿大vs摩洛哥-2026-07-04" → "加拿大 vs 摩洛哥"
+    const s = name.replace(/^比赛模拟-/, "").replace(/-\d{4}-\d{2}-\d{2}$/, "");
+    return s ? s.replace(/\s*vs\s*/i, " vs ") : title;
+  }
+  if (dir === "intel") {
+    // "Deep-search … R32 赛前情报（2026-07-02 ET · 三场：西奥 / 葡克 / 瑞阿）"
+    // → "R32 · 西奥/葡克/瑞阿"; 解析不出就用去前缀的标题。
+    const round = (name.match(/赛前情报-(.+)$/) || [, ""])[1];
+    const par = (title.match(/[（(]([^）)]*)[）)]/) || [, ""])[1];
+    const teams = ((par.match(/[:：]\s*(.+)$/) || [, ""])[1] || "").replace(/\s*\/\s*/g, "/").trim();
+    const lab = [round, teams].filter(Boolean).join(" · ");
+    return lab || title.replace(/^Deep-search\s*/i, "");
+  }
+  return title; // agents / scoring / 其他: 用 H1 标题
 }
 
 async function loadReportsList() {
@@ -1023,50 +1055,85 @@ async function loadReportsList() {
     const list = await apiGet("/api/reports");
     tabsEl.innerHTML = "";
     if (!Array.isArray(list) || list.length === 0) { tabsEl.appendChild(el("div", "empty", "暂无报告")); return; }
-    // 按修改时间倒序 (最新在前); 后端已排, 前端兜底
-    const sorted = list.slice().sort((a, b) => reportMtimeMs(b) - reportMtimeMs(a));
-    // 按天分组: 一天一标题, 报告一行一个 (标题左·时间右); 默认只露最新 3 行, 余者折叠
-    const VISIBLE = 3;
-    const groups = [];
-    let curKey = null, shown = 0;
-    sorted.forEach((r) => {
-      const ms = reportMtimeMs(r);
-      const key = ms ? dayKey(new Date(ms)) : "unknown";
-      if (key !== curKey) {
-        curKey = key;
-        const g = el("div", "report-group");
-        g.appendChild(el("div", "report-group-h", dayLabel(ms)));
-        tabsEl.appendChild(g);
-        groups.push({ el: g, rows: [] });
-      }
-      const name = reportName(r);
-      const row = el("button", "report-tab");
-      row.dataset.name = name;
-      row.appendChild(el("span", "rt-title", reportTitle(r)));
-      const t = hhmm(ms);
-      if (t) row.appendChild(el("span", "rt-time", t));
-      row.addEventListener("click", () => openReport(name));
-      groups[groups.length - 1].el.appendChild(row);
-      groups[groups.length - 1].rows.push({ el: row, extra: shown >= VISIBLE });
-      shown++;
+
+    // 分类 (未知子目录 / 根目录 → "其他"), 各类目内按日期倒序
+    const byCat = new Map();
+    list.forEach((r) => {
+      const dir = knownCat(reportDir(r)) ? reportDir(r) : "";
+      if (!byCat.has(dir)) byCat.set(dir, []);
+      byCat.get(dir).push(r);
     });
-    const hiddenCount = Math.max(0, sorted.length - VISIBLE);
-    if (hiddenCount > 0) {
-      const toggle = el("button", "report-more");
-      const apply = (collapsed) => {
-        groups.forEach((g) => {
-          const hasVisible = g.rows.some((r) => !r.extra);
-          g.el.hidden = collapsed && !hasVisible; // 整组都在折叠区 → 连日期标题一起藏
-          g.rows.forEach((r) => { r.el.hidden = collapsed && r.extra; });
-        });
-        toggle.textContent = collapsed ? `展开全部 (还有 ${hiddenCount} 篇) ▾` : "收起 ▴";
-      };
-      let collapsed = true;
-      toggle.addEventListener("click", () => { collapsed = !collapsed; apply(collapsed); });
-      tabsEl.appendChild(toggle);
-      apply(true);
-    }
-    openReport(state.activeReport || reportName(sorted[0]));
+    byCat.forEach((arr) => arr.sort((a, b) => reportSortKey(b) - reportSortKey(a)));
+
+    // pill 顺序: REPORT_CATS 里有内容的, 末尾接"其他"(若有)
+    const cats = REPORT_CATS.filter((c) => (byCat.get(c.dir) || []).length);
+    if ((byCat.get("") || []).length) cats.push(REPORT_CAT_OTHER);
+    if (!cats.length) { tabsEl.appendChild(el("div", "empty", "暂无报告")); return; }
+
+    const pillRow = el("div", "report-pills");
+    const listWrap = el("div", "report-list");
+    tabsEl.appendChild(pillRow);
+    tabsEl.appendChild(listWrap);
+
+    const VISIBLE = 6;
+    const renderList = (dir) => {
+      listWrap.innerHTML = "";
+      const arr = byCat.get(dir) || [];
+      const rows = [];
+      arr.forEach((r, i) => {
+        const name = reportName(r);
+        const row = el("button", "report-tab");
+        row.dataset.name = name;
+        row.appendChild(el("span", "rt-title", reportLabel(r)));
+        const d = reportDate(r);
+        if (d) row.appendChild(el("span", "rt-time", d));
+        row.addEventListener("click", () => openReport(name));
+        row.hidden = i >= VISIBLE;
+        listWrap.appendChild(row);
+        rows.push(row);
+      });
+      const hidden = Math.max(0, arr.length - VISIBLE);
+      if (hidden > 0) {
+        const toggle = el("button", "report-more");
+        let collapsed = true;
+        const apply = () => {
+          rows.forEach((row, i) => { row.hidden = collapsed && i >= VISIBLE; });
+          toggle.textContent = collapsed ? `展开全部 (还有 ${hidden} 篇) ▾` : "收起 ▴";
+        };
+        toggle.addEventListener("click", () => { collapsed = !collapsed; apply(); });
+        listWrap.appendChild(toggle);
+        apply();
+      }
+      $$(".report-tab").forEach((b) => b.classList.toggle("active", b.dataset.name === state.activeReport));
+    };
+
+    const selectCat = (dir, openFirst) => {
+      $$(".report-pill").forEach((p) => p.classList.toggle("active", p.dataset.dir === dir));
+      renderList(dir);
+      if (openFirst) {
+        const arr = byCat.get(dir) || [];
+        if (arr.length) openReport(reportName(arr[0]));
+      }
+    };
+
+    cats.forEach((c) => {
+      const pill = el("button", "report-pill");
+      pill.dataset.dir = c.dir;
+      pill.appendChild(el("span", "rp-label", `${c.icon} ${c.label}`));
+      pill.appendChild(el("span", "rp-count", String((byCat.get(c.dir) || []).length)));
+      pill.addEventListener("click", () => selectCat(c.dir, true));
+      pillRow.appendChild(pill);
+    });
+
+    // 初始: 打开 activeReport(若还在)否则全局最新的那篇, 并把 pill 停在它所属类目
+    const initName = (state.activeReport && list.some((r) => reportName(r) === state.activeReport))
+      ? state.activeReport
+      : reportName(list.slice().sort((a, b) => reportMtimeMs(b) - reportMtimeMs(a))[0]);
+    const initRep = list.find((r) => reportName(r) === initName);
+    let initDir = knownCat(reportDir(initRep)) ? reportDir(initRep) : "";
+    if (!cats.some((c) => c.dir === initDir)) initDir = cats[0].dir;
+    selectCat(initDir, false);
+    openReport(initName);
   } catch (err) {
     tabsEl.innerHTML = "";
     tabsEl.appendChild(el("div", "empty", "报告列表加载失败: " + err.message));

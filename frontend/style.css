@@ -981,6 +981,22 @@ main {
    报告 tab
    ============================================================ */
 .report-tabs { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
+/* 分类导航: pill 行(类目筛选) + 该类目日期倒序列表 */
+.report-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.report-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--ink-3); border: 1px solid var(--frame-soft); color: var(--bone-dim);
+  border-radius: 999px; padding: 5px 12px;
+  font-family: var(--font-mono); font-size: 12px; cursor: pointer; white-space: nowrap;
+}
+.report-pill:hover { border-color: var(--frame); color: var(--bone); }
+.report-pill.active { background: var(--bone); color: var(--ink); border-color: var(--bone); }
+.report-pill .rp-count {
+  font-size: 10.5px; line-height: 1.5; padding: 0 6px; border-radius: 999px;
+  color: var(--bone-faint); background: var(--ink-2); font-variant-numeric: tabular-nums;
+}
+.report-pill.active .rp-count { color: var(--bone-dim); background: rgba(0, 0, 0, 0.16); }
+.report-list { display: flex; flex-direction: column; gap: 4px; }
 .report-group { display: flex; flex-direction: column; gap: 4px; }
 .report-group + .report-group { margin-top: 10px; }
 .report-group-h {
