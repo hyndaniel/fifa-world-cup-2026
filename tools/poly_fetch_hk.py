@@ -32,6 +32,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sqlite3
 import sys
 import urllib.request
@@ -128,12 +129,22 @@ def list_events() -> dict:
     return idx
 
 
+# 主盘(胜平负)slug 以日期结尾, 例 fifwc-aus-egy-2026-07-03; 子盘(first-to-score /
+# halftime-result / exact-score / player-props …)是另立 event, title 相同但 slug 在
+# 日期后附后缀、无胜平负结构 → 选中会 parse 出 h/d/a 全 None 判 "ml 不全" 失败。
+_MAIN_SLUG_RE = re.compile(r"\d{4}-\d{2}-\d{2}$")
+
+
 def find_slug(idx: dict, hen: str, aen: str):
-    """title 同时含两队英文子串的第一个 event(顺序无关)。返回 (slug, title)。"""
-    for s, t in idx.items():
-        if hen in t and aen in t:
+    """title 同时含两队英文子串的 event(顺序无关), **优先主盘**(slug 以日期结尾);
+    无主盘时退回第一个命中。返回 (slug, title) 或 (None, None)。"""
+    hits = [(s, t) for s, t in idx.items() if hen in t and aen in t]
+    if not hits:
+        return None, None
+    for s, t in hits:
+        if _MAIN_SLUG_RE.search(s):
             return s, t
-    return None, None
+    return hits[0]
 
 
 def parse_ml(base, hen: str, aen: str):

@@ -57,6 +57,28 @@ def test_find_slug_in_events():
     assert find_slug(idx, "Spain", "Mars") == (None, None)
 
 
+def test_find_slug_prefers_main_over_submarket():
+    """同一对阵有子盘 event 排在主盘之前时, 仍须返回主盘(slug 以日期结尾)。
+
+    回归: 子盘(first-to-score / halftime-result …)title 与主盘相同, 但无胜平负结构,
+    选中会 parse 出 h/d/a 全 None 判 "ml 不全" 失败 —— 曾致 083/084/086/087 等场
+    Poly 主线长期未刷。
+    """
+    idx = {
+        # 子盘故意排在前面, 复现按插入序命中第一个的旧 bug
+        "fifwc-aus-egy-2026-07-03-first-to-score": "Australia vs. Egypt",
+        "fifwc-aus-egy-2026-07-03-halftime-result": "Australia vs. Egypt",
+        "fifwc-aus-egy-2026-07-03": "Australia vs. Egypt",  # 主盘
+    }
+    slug, _ = find_slug(idx, "Australia", "Egypt")
+    assert slug == "fifwc-aus-egy-2026-07-03"
+
+    # 只有子盘(主盘未入索引)时退回第一个命中, 不回归成 (None, None)
+    idx_only_sub = {"fifwc-can-mar-2026-07-04-halftime-result": "Canada vs. Morocco"}
+    slug2, _ = find_slug(idx_only_sub, "Canada", "Morocco")
+    assert slug2 == "fifwc-can-mar-2026-07-04-halftime-result"
+
+
 def test_list_events_paging_and_filter():
     """list_events 用注入 fetcher: 翻页(<100 提前停) + 过滤 more-markets/非 fifwc。"""
     events = _load("poly_events.json")
