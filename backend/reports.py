@@ -14,6 +14,7 @@
 """
 import json
 import pathlib
+import re
 import subprocess
 import time
 
@@ -122,6 +123,82 @@ def _first_h1(text):
     return None
 
 
+def _zucai_from_title(title):
+    """比赛模拟标题结尾的竞猜序号, 例 '…（R32 · 087）'/'…（R16 · 089）' → 87/89。
+    取括号内结尾那串数字; 解析不出返回 None(前端排序时落到末尾)。"""
+    m = re.search(r"(\d+)\s*[）)]\s*$", title or "")
+    return int(m.group(1)) if m else None
+
+
+# 文件名轮次 → 展示用轮次名; 顺序即匹配优先级(R16 先于 R32 免子串误配, 虽当前无歧义)。
+_INTEL_ROUNDS = (("R16", "淘汰赛R16"), ("R32", "淘汰赛R32"), ("6场", "小组赛"))
+
+
+def _intel_stage(name):
+    """从文件名推轮次显示名: '…赛前情报-R32'→'淘汰赛R32'; '…-6场'→'小组赛'; 缺则 ''。"""
+    for key, label in _INTEL_ROUNDS:
+        if key in name:
+            return label
+    return ""
+
+
+# 国旗/emoji/变体选择符/ZWJ/tag 字符(England 旗是 base+tag 序列)一并剥掉。
+_EMOJI_RE = re.compile(
+    r"[\U0001F000-\U0001FAFF\U00002600-\U000027BF\U0001F1E6-\U0001F1FF"
+    r"︀-️‍\U000E0000-\U000E007F]")
+
+
+try:
+    from .teammap import CN2EN
+except ImportError:  # 容器/脚本以顶层模块跑时的回退
+    from teammap import CN2EN  # type: ignore
+
+# 英文队名 → 中文(CN2EN 反转 + 报告正文里出现过、写法与 CN2EN 取值不同的别名),
+# 让纯英文 H2 的老情报报告也显示中文全名, 与中文报告统一。
+_EN2CN = {en: cn for cn, en in CN2EN.items()}
+_EN2CN.update({
+    "USA": "美国", "Côte d'Ivoire": "科特迪瓦", "Ivory Coast": "科特迪瓦",
+    "Bosnia & Herzegovina": "波黑", "Türkiye": "土耳其", "Turkey": "土耳其",
+})
+
+
+def _prefer_cn(side):
+    """一侧队名: 中英混排(如 'Curaçao 库拉索')只留中文; 纯英文尽量译中文, 无对照留英文。"""
+    side = side.strip()
+    if re.search(r"[一-鿿]", side):
+        cn = " ".join(re.findall(r"[一-鿿]+", side))
+        return cn or side
+    return _EN2CN.get(side, side)
+
+
+def _intel_matches(text):
+    """从赛前情报正文的 '## X vs Y（…）' H2 抽完整对阵名(去序号/国旗/场地时间)。
+
+    跨报告格式不一(有的带 '周六067'/'080 ·'/'① 组E|'/国旗/'揭幕战 ·', 场地用括号或
+    ' · ' 接), 尽力清洗; 清洗后仍含 ' vs ' 才收, 否则跳过。中英混排优先取中文。
+    返回 ['西班牙 vs 奥地利', …](纯英文源报告则保留英文全名, 无中文可取)。
+    """
+    out = []
+    for line in text.splitlines():
+        if not line.startswith("## ") or " vs " not in line:
+            continue
+        core = re.split(r"[（(]", line[3:])[0]          # 砍掉场地/时间括号
+        core = _EMOJI_RE.sub("", core)                   # 去国旗 emoji
+        core = re.sub(r"^\s*周[一二三四五六日]?\d+\s*", "", core)   # '周六067 '
+        core = re.sub(r"^\s*\d+\s*·\s*", "", core)         # '080 · '
+        core = re.sub(r"^\s*[①②③④⑤⑥⑦⑧⑨]\s*", "", core)    # '① '
+        core = re.sub(r"^\s*组[A-Z]\s*\|\s*", "", core)     # '组E|'
+        core = re.sub(r"揭幕战\s*·\s*", "", core)           # 'R32 揭幕战 · '
+        core = re.sub(r"^\s*R32\s+", "", core)              # 残留 'R32 '
+        # 场地/时间可能用 ' · ' 接在对阵后(无括号) → 取含 vs 的那段
+        seg = next((s for s in core.split(" · ") if " vs " in s), core)
+        seg = re.sub(r"\s+", " ", seg).strip(" ·|-")
+        parts = seg.split(" vs ")
+        if len(parts) == 2:
+            out.append(f"{_prefer_cn(parts[0])} vs {_prefer_cn(parts[1])}")
+    return out
+
+
 def list_reports(reports_dir="reports"):
     """reports/*.md → [{"name","title","mtime"}], 按时间倒序 (最新在前)。
 
@@ -149,8 +226,10 @@ def list_reports(reports_dir="reports"):
         # name = 文件名 stem (迁移后全局唯一), URL 安全且无斜杠 → 前端/路由不变
         name = p.stem
         title = name
+        text = ""
         try:
-            t = _first_h1(p.read_text(encoding="utf-8"))
+            text = p.read_text(encoding="utf-8")
+            t = _first_h1(text)
             if t:
                 title = t
         except (OSError, UnicodeDecodeError):
@@ -160,7 +239,14 @@ def list_reports(reports_dir="reports"):
         # dir = reports/ 下的顶层子目录 (match-sims/intel/agents/scoring); 根目录报告为 ""。
         # 前端据此把报告分类导航 (比赛模拟/赛前情报/预测台账/跑分卡)。
         top = rel.parts[0] if len(rel.parts) > 1 else ""
-        out.append({"name": name, "title": title, "mtime": mtime, "dir": top})
+        item = {"name": name, "title": title, "mtime": mtime, "dir": top}
+        # 分类导航附加字段: 比赛模拟按竞猜序号排序; 赛前情报显示"轮次 · 完整对阵名"。
+        if top == "match-sims":
+            item["zucai"] = _zucai_from_title(title)
+        elif top == "intel":
+            item["stage"] = _intel_stage(name)
+            item["matches"] = _intel_matches(text)
+        out.append(item)
     # 最新生成/更新的报告排最前
     out.sort(key=lambda r: r["mtime"], reverse=True)
     return out
