@@ -68,6 +68,32 @@ def test_live_subdir_md_included_in_list(tmp_path):
     assert "三方跑分卡" in titles  # H1 标题正常解析(跨子目录)
 
 
+def test_matchsim_zucai_and_intel_stage_matches(tmp_path):
+    """比赛模拟带 zucai(标题结尾竞猜号); 赛前情报带 stage + 从正文 H2 解析的完整对阵名。"""
+    (tmp_path / "match-sims").mkdir()
+    (tmp_path / "match-sims" / "比赛模拟-加拿大vs摩洛哥-2026-07-04.md").write_text(
+        "# 比赛模拟 · 加拿大 vs 摩洛哥（R16 · 089）\n", encoding="utf-8")
+    (tmp_path / "match-sims" / "比赛模拟-巴西vs日本-2026-06-29.md").write_text(
+        "# 比赛模拟 · 巴西 vs 日本（R32 · 074）\n", encoding="utf-8")
+    (tmp_path / "intel").mkdir()
+    (tmp_path / "intel" / "2026-07-02__赛前情报-R32.md").write_text(
+        "# Deep-search 淘汰赛 R32 赛前情报\n"
+        "## 西班牙 vs 奥地利（ET 7/2 15:00 · SoFi）\n正文\n"
+        "## 080 · 🇨🇩 England vs 🇨🇩 DR Congo（ET 7/1）\n"
+        "## ① 组E|Curaçao 库拉索 vs Ivory Coast 科特迪瓦 · 16:00 ET\n"
+        "## 缺口清单\n", encoding="utf-8")
+    (tmp_path / "intel" / "2026-06-25__赛前情报-6场.md").write_text("# 六场\n", encoding="utf-8")
+    by = {r["name"]: r for r in list_reports(str(tmp_path))}
+    assert by["比赛模拟-加拿大vs摩洛哥-2026-07-04"]["zucai"] == 89
+    assert by["比赛模拟-巴西vs日本-2026-06-29"]["zucai"] == 74
+    r32 = by["2026-07-02__赛前情报-R32"]
+    assert r32["stage"] == "淘汰赛R32"
+    # 中文原样; 纯英文译中文(England→英格兰, DR Congo→刚果金); 中英混排取中文
+    assert r32["matches"] == ["西班牙 vs 奥地利", "英格兰 vs 刚果金", "库拉索 vs 科特迪瓦"]
+    assert by["2026-06-25__赛前情报-6场"]["stage"] == "小组赛"  # 无 H2 → matches 为 []
+    assert by["2026-06-25__赛前情报-6场"]["matches"] == []
+
+
 def test_dir_field_is_top_level_subdir(tmp_path):
     """每条报告带 dir = reports/ 下顶层子目录 (供前端分类导航); 根目录报告 dir=''。"""
     (tmp_path / "match-sims").mkdir()

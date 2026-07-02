@@ -1038,13 +1038,12 @@ function reportLabel(r) {
     return s ? s.replace(/\s*vs\s*/i, " vs ") : title;
   }
   if (dir === "intel") {
-    // "Deep-search … R32 赛前情报（2026-07-02 ET · 三场：西奥 / 葡克 / 瑞阿）"
-    // → "R32 · 西奥/葡克/瑞阿"; 解析不出就用去前缀的标题。
-    const round = (name.match(/赛前情报-(.+)$/) || [, ""])[1];
-    const par = (title.match(/[（(]([^）)]*)[）)]/) || [, ""])[1];
-    const teams = ((par.match(/[:：]\s*(.+)$/) || [, ""])[1] || "").replace(/\s*\/\s*/g, "/").trim();
-    const lab = [round, teams].filter(Boolean).join(" · ");
-    return lab || title.replace(/^Deep-search\s*/i, "");
+    // 统一「[小组赛/淘汰赛R32] · 完整对阵名」, stage/matches 由后端从正文 H2 解析。
+    const stage = (r && r.stage) || "";
+    const matches = (r && Array.isArray(r.matches)) ? r.matches : [];
+    if (stage && matches.length) return `${stage} · ${matches.join(" / ")}`;
+    if (stage) return stage;
+    return title.replace(/^Deep-search\s*/i, "");
   }
   return title; // agents / scoring / 其他: 用 H1 标题
 }
@@ -1063,7 +1062,18 @@ async function loadReportsList() {
       if (!byCat.has(dir)) byCat.set(dir, []);
       byCat.get(dir).push(r);
     });
-    byCat.forEach((arr) => arr.sort((a, b) => reportSortKey(b) - reportSortKey(a)));
+    // 比赛模拟按竞猜序号升序(解析不出的落末尾); 其余类目按日期倒序(最新在前)。
+    byCat.forEach((arr, dir) => {
+      if (dir === "match-sims") {
+        arr.sort((a, b) => {
+          const za = a.zucai == null ? Infinity : a.zucai;
+          const zb = b.zucai == null ? Infinity : b.zucai;
+          return za - zb || reportSortKey(b) - reportSortKey(a);
+        });
+      } else {
+        arr.sort((a, b) => reportSortKey(b) - reportSortKey(a));
+      }
+    });
 
     // pill 顺序: REPORT_CATS 里有内容的, 末尾接"其他"(若有)
     const cats = REPORT_CATS.filter((c) => (byCat.get(c.dir) || []).length);
@@ -1084,7 +1094,9 @@ async function loadReportsList() {
         const name = reportName(r);
         const row = el("button", "report-tab");
         row.dataset.name = name;
-        row.appendChild(el("span", "rt-title", reportLabel(r)));
+        const label = reportLabel(r);
+        row.title = label; // 完整对阵名可能超长被省略号截断, 悬停可见全名
+        row.appendChild(el("span", "rt-title", label));
         const d = reportDate(r);
         if (d) row.appendChild(el("span", "rt-time", d));
         row.addEventListener("click", () => openReport(name));
