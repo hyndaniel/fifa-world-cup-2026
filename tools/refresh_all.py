@@ -12,27 +12,23 @@
 """
 from __future__ import annotations
 import argparse
-import base64
 import json
 import os
 import re
 import sys
 import tempfile
 import time
-import urllib.request
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO, "tools"))
 sys.path.insert(0, REPO)
+import ingest_client as ic  # noqa: E402
 import odds_watch as ow  # noqa: E402
 import poly_fetch_hk as pf  # noqa: E402
 from backend import sporttery  # noqa: E402
+from backend.devig import devig_from_odds  # noqa: E402
 
 PROXY = os.environ.get("WC_HTTPS_PROXY", "http://127.0.0.1:7897")
-INGEST = os.environ.get("WC_INGEST_URL", "http://18.166.71.60:8000").rstrip("/")
-PW = os.environ.get("WC_INGEST_PW", "")
-PW_PLACEHOLDER = "__看板密码__"  # plist 模板占位符;没换=误配,鉴权头会带错密码/缺失
-USER = os.environ.get("WC_INGEST_USER", "admin")
 
 
 def arrow(old, new):
@@ -42,13 +38,8 @@ def arrow(old, new):
     return "▲" if new > old else ("▼" if new < old else "-")
 
 
-def _devig_from_had(had):
-    """1X2 欧赔 → 去水% {h,d,a}; 缺/0 则 None。"""
-    if not had or any(had.get(k) in (None, 0) for k in ("h", "d", "a")):
-        return None
-    imp = {k: 1.0 / had[k] for k in ("h", "d", "a")}
-    s = sum(imp.values())
-    return {k: round(imp[k] / s * 100, 1) for k in ("h", "d", "a")}
+# 1X2 欧赔 → 去水% {h,d,a}; 缺/0 则 None。实现收敛到 backend.devig(原本地拷贝)。
+_devig_from_had = devig_from_odds
 
 
 def _delta_had(prev, new_had):
@@ -147,18 +138,9 @@ def build_panel(zucai_items, consensus_items, poly_items, prev_lookup):
     return panel
 
 
-def _post(path, body):
-    data = json.dumps(body, ensure_ascii=False).encode("utf-8")
-    hdr = {"Content-Type": "application/json"}
-    if PW:
-        hdr["Authorization"] = "Basic " + base64.b64encode(f"{USER}:{PW}".encode()).decode()
-    req = urllib.request.Request(INGEST + path, data=data, headers=hdr, method="POST")
-    try:
-        with urllib.request.urlopen(req, timeout=30) as r:
-            return json.load(r)
-    except Exception as e:  # noqa: BLE001 — best-effort, 缓存已写, 下轮重推
-        sys.stderr.write(f"  [warn] POST {path} -> {e!r}\n")
-        return None
+# best-effort POST(失败 warn 返 None, 下轮重推); 模块级别名保留 _post 名字,
+# 供测试 monkeypatch(test_refresh_align 打桩 ra._post)。实现在 ingest_client。
+_post = ic.post_quiet
 
 
 def _fetch_poly_local(cache_path):
@@ -207,13 +189,19 @@ def run_once(dry_run=False):
     print(f"[{ow.now_bj()}] 三源: 竞彩{len(zucai_items)} 欧盘{len(consensus_items)} "
           f"Poly{len(poly_items)}; 面板{len(panel)}场")
 
+    # error-contract 补强: 三源全空(连 raw 信封都没有)= 抓取整体失效, 即使
+    # HK 肯收空包也要退非零 —— 否则 launchd 把"一条数据没抓到"记成健康轮。
+    if not raw_env and not zucai_items and not consensus_items and not poly_items:
+        sys.stderr.write("  [err] 三源全空: 本轮一条数据都没抓到, 退非零\n")
+        return 1
+
     # 4) 推 HK
     if dry_run:
         print("  --dry-run: 不推 HK")
         return 0
     # 配置兜底:密码空或没换占位符 → HK 若开鉴权必 401。打 stderr 提醒,但不据此直接判失败
     # (HK 可关鉴权,空 PW 合法)——真正的失败信号以"POST 是否推成"为准,见下。
-    if PW in ("", PW_PLACEHOLDER):
+    if ic.pw_missing():
         sys.stderr.write(
             "  [warn] WC_INGEST_PW 未配置(空或占位符 __看板密码__)→ 鉴权头缺失,HK 若开鉴权将 401\n")
     attempted, ok = 0, 0

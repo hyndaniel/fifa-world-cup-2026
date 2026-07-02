@@ -16,7 +16,6 @@ POST 到 HK 看板 /api/ingest/enrich。新闻来自 Google News RSS(Mac 可直�
   WC_ENRICH_TEAMS    可选: 逗号分隔球队名, 覆盖从 /api/state 拉取的 watchlist
 """
 import argparse
-import base64
 import json
 import os
 import sys
@@ -25,29 +24,17 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import ingest_client as ic  # noqa: E402
+
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Mobile/15E148"
-BASE = os.environ.get("WC_INGEST_URL", "http://18.166.71.60:8000").rstrip("/")
-PW = os.environ.get("WC_INGEST_PW", "")
-USER = os.environ.get("WC_INGEST_USER", "admin")
 INTERVAL = int(os.environ.get("WC_ENRICH_INTERVAL", "600"))
 ENRICH_TEAMS = os.environ.get("WC_ENRICH_TEAMS", "")
 
 
-def _auth_header():
-    """basic auth 头(镜像 collect_zucai.py 风格)。"""
-    if PW:
-        tok = base64.b64encode(f"{USER}:{PW}".encode()).decode()
-        return {"Authorization": "Basic " + tok}
-    return {}
-
-
 def fetch_state():
     """GET {base}/api/state, 返回解析后的 dict; 失败抛异常。"""
-    hdr = {"User-Agent": UA, "Accept": "application/json"}
-    hdr.update(_auth_header())
-    req = urllib.request.Request(BASE + "/api/state", headers=hdr, method="GET")
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return json.loads(r.read())
+    return ic.get("/api/state", headers={"User-Agent": UA})
 
 
 def teams_from_watchlist(state):
@@ -120,14 +107,9 @@ def fetch_lineup(team):
 
 
 def post_enrich(items):
-    """POST {base}/api/ingest/enrich, body {"items":[...]}; 返回响应文本。"""
-    body = json.dumps({"items": items}, ensure_ascii=False).encode()
-    hdr = {"Content-Type": "application/json", "User-Agent": UA}
-    hdr.update(_auth_header())
-    req = urllib.request.Request(BASE + "/api/ingest/enrich", data=body,
-                                 headers=hdr, method="POST")
-    with urllib.request.urlopen(req, timeout=60) as r:
-        return r.read().decode()
+    """POST {base}/api/ingest/enrich, body {"items":[...]}; 失败抛异常。"""
+    return ic.post("/api/ingest/enrich", {"items": items},
+                   timeout=60, headers={"User-Agent": UA})
 
 
 def resolve_teams():
@@ -165,14 +147,14 @@ def main():
     parser.add_argument("--once", action="store_true", help="只跑一次, 不循环")
     args = parser.parse_args()
 
-    if not PW:
+    if ic.pw_missing():
         print("缺 WC_INGEST_PW(看板密码), 退出")
         sys.exit(1)
     if args.once:
         once()
         return
     print(f"富化采集循环启动: 每 {INTERVAL}s 拉 watchlist → 抓新闻/阵容 → "
-          f"POST {BASE}/api/ingest/enrich")
+          f"POST {ic.INGEST}/api/ingest/enrich")
     while True:
         try:
             once()

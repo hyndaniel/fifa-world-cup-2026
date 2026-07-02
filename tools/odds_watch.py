@@ -50,13 +50,10 @@ def latest(c, source, match_key):
 
 # ---------- devig 显示用 ----------
 def implied3(had):
-    try:
-        h, d, a = had["h"], had["d"], had["a"]
-        if not all(x and x > 0 for x in (h, d, a)): return None
-        imp = [1/h, 1/d, 1/a]; s = sum(imp)
-        return [round(x/s*100, 1) for x in imp]
-    except Exception:
-        return None
+    """欧赔 → 去水% [h,d,a] 列表(显示用); 实现收敛到 backend.devig。"""
+    from backend.devig import devig_from_odds
+    dv = devig_from_odds(had if isinstance(had, dict) else None)
+    return [dv["h"], dv["d"], dv["a"]] if dv else None
 
 # ---------- 对比 ----------
 def _arrow(old, new): return "▲升水" if new > old else "▼降水"

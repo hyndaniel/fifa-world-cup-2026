@@ -35,6 +35,7 @@ from pydantic import BaseModel
 from backend.config import load_config
 from backend.db import Db
 from backend import bet_stats
+from backend import decision_contract
 from backend import poller
 from backend import reports as reports_mod
 from backend.state import BJ, build_state, datetime, decisions_view
@@ -100,6 +101,17 @@ def create_app(db_path="wc.db", cfg=None, reports_dir="reports",
                 detail="invalid credentials",
                 headers={"WWW-Authenticate": "Basic"},
             )
+
+    # ingest/refresh 都可能后台跑 poll_once; 加锁串行化, 防两轮并发对
+    # value_points 互相 DELETE+INSERT + SQLite 写锁竞争
+    _poll_lock = threading.Lock()
+
+    def _run_poll(raw_body, label):
+        with _poll_lock:
+            try:
+                poller.poll_once(db, cfg, zucai_fetch=lambda: raw_body)
+            except Exception:  # noqa: BLE001
+                log.exception("%s poll_once 失败", label)
 
     # ---------------- /api/state ----------------
     @app.get("/api/state", dependencies=[Depends(auth_dep)])
@@ -171,13 +183,9 @@ def create_app(db_path="wc.db", cfg=None, reports_dir="reports",
         # 每场存的 source='zucai' 是已解析的 ZucaiMatch dict (parse_matches 吃不动)。
         db.save_snapshot(0, "zucai_raw", body)
 
-        def work():
-            try:
-                poller.poll_once(db, cfg, zucai_fetch=lambda: body)
-            except Exception:  # noqa: BLE001
-                log.exception("ingest poll_once 失败")
-
-        threading.Thread(target=work, daemon=True).start()
+        threading.Thread(
+            target=_run_poll, args=(body, "ingest"), daemon=True
+        ).start()
         return {"accepted": True, "matches": n}
 
     # ---------------- /api/ingest/enrich ----------------
@@ -201,8 +209,16 @@ def create_app(db_path="wc.db", cfg=None, reports_dir="reports",
     def api_ingest_predictions(body: PredictionsIn):
         decisions = body.decisions or []
         total = len(decisions)
+        # 软校验(decision_contract): 只 warn 不拒收, 让字段脱节在日志可见,
+        # 而不是看板静默空一块
+        warnings = 0
+        for d in decisions:
+            for w in decision_contract.validate_decision(d):
+                log.warning("ingest/predictions 契约警告: %s", w)
+                warnings += 1
         n = db.save_decisions(decisions)
-        return {"accepted": True, "n": n, "skipped": total - n}
+        return {"accepted": True, "n": n, "skipped": total - n,
+                "contract_warnings": warnings}
 
     # ---------------- /api/ingest/odds ----------------
     # 本地 refresh_all POST 对齐好的赔率面板 payload(三源现价+变化+分歧), 按 match_key
@@ -296,14 +312,13 @@ def create_app(db_path="wc.db", cfg=None, reports_dir="reports",
         snapshot = db.latest_snapshot("zucai_raw")
         if snapshot is None:
             return {"accepted": False, "reason": "no zucai snapshot"}
+        if _poll_lock.locked():
+            # 已有一轮在跑, 重复触发只会对 value_points 做重复 DELETE+INSERT
+            return {"accepted": False, "reason": "poll already running"}
 
-        def work():
-            try:
-                poller.poll_once(db, cfg, zucai_fetch=lambda: snapshot)
-            except Exception:  # noqa: BLE001
-                log.exception("refresh poll_once 失败")
-
-        threading.Thread(target=work, daemon=True).start()
+        threading.Thread(
+            target=_run_poll, args=(snapshot, "refresh"), daemon=True
+        ).start()
         return {"accepted": True}
 
     # ---------------- static frontend ----------------

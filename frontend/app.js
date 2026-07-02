@@ -1,13 +1,19 @@
 /* WC 价值看板 前端逻辑 — "Reading Room" 主题
  * 契约 (与后端 API 不变):
- *   GET  /api/state                 -> {ts, next_cutoff, value_radar[], watchlist[], ledger{A,B}, matches_today[]}
+ *   GET  /api/state                 -> {ts, next_cutoff, value_radar[], watchlist[], ...}
+ *                                      (本文件只消费这四段; 其余字段见 state.build_state)
  *   GET  /api/decisions             -> {ts, decisions[]}
  *   GET  /api/reports               -> [{name, title}, ...]   (容错: 也支持 [string,...])
  *   GET  /api/reports/{name}        -> markdown 文本
- *   POST /api/refresh               (重抓+刷新)
+ *   POST /api/refresh               (重抓+刷新; 返回 {accepted, reason?}, accepted=false 须提示)
  *   POST /api/bets        body: {wallet, legs, stake, odds, note}
  *   POST /api/watchlist   body: {kind, key, note}
- *   DELETE /api/watchlist/{id}      (容错: 也支持 ?id= )
+ *   DELETE /api/watchlist/{id}
+ *
+ * 决策卡字段/枚举契约的单一真源: backend/decision_contract.py
+ * (TIERS=green/yellow/red/skip, VIEW_STATUS=upcoming/recent/expired/unknown,
+ *  DECISION_FIELDS)。本文件里 flagBadge / decFilter / evOf 的硬编码必须与其一致;
+ * 改枚举先改那边, 再同步这里。
  *
  * 署名件: 公允轴 —— 把"去水价值"画成一条标尺上的落点, 1.00 居中, 左亏右赢。
  */
@@ -111,14 +117,22 @@ function topFlag(flags) {
 }
 
 // ================= 公允轴 (署名件) =================
+// EV 读法单一真源: 去水优先(ev_pct_devig), 缺才退生 EV(ev_pct)。
+// 全站所有 EV 展示必须走这里 —— 此前公允轴/腿行读去水、best_leg chip 读生 EV,
+// 同一条腿两处显示两个数。
+function evOf(o) {
+  if (!o) return null;
+  const ev = o.ev_pct_devig != null ? o.ev_pct_devig : o.ev_pct;
+  return ev != null && !Number.isNaN(Number(ev)) ? Number(ev) : null;
+}
 // 去水价值: 优先 value_devig; 否则 odds×poly去水/100; 再否则 1+EV/100
 function legValue(o) {
   if (!o) return null;
   if (o.value_devig != null && !Number.isNaN(Number(o.value_devig))) return Number(o.value_devig);
   const od = Number(o.zucai_odds), p = Number(o.poly_prob_devig);
   if (od > 0 && p > 0) return (od * p) / 100;
-  let ev = o.ev_pct_devig != null ? o.ev_pct_devig : o.ev_pct;
-  if (ev != null && !Number.isNaN(Number(ev))) return 1 + Number(ev) / 100;
+  const ev = evOf(o);
+  if (ev != null) return 1 + ev / 100;
   return null;
 }
 function axisPct(v) {
@@ -194,7 +208,7 @@ function probEdge(r) {
 function buildCompareLine(r) {
   const implied = impliedPct(r.zucai_odds);
   const edge = probEdge(r);
-  const evDevig = r.ev_pct_devig != null ? r.ev_pct_devig : r.ev_pct;
+  const evDevig = evOf(r);
   const line = el("div", "ri-compare");
   const seg = (text, cls) => el("span", cls || "", text);
 
@@ -273,7 +287,7 @@ function renderRadarLeg(r) {
   const implied = impliedPct(r.zucai_odds);
   const edge = probEdge(r);
   const edgeCls = edge == null ? "" : edge >= 0 ? "v-pos" : "v-neg";
-  const evDevig = r.ev_pct_devig != null ? r.ev_pct_devig : r.ev_pct;
+  const evDevig = evOf(r);
   const evCls = evDevig == null || Number.isNaN(Number(evDevig)) ? "" : Number(evDevig) >= 0 ? "v-pos" : "v-neg";
   detail.innerHTML = `
       <div class="rd-grid">
@@ -312,7 +326,7 @@ function buildLegRow(leg) {
   const meta = el("span", "dc-leg-meta");
   if (leg.zucai_odds != null) meta.appendChild(el("span", "dc-leg-odds", `足彩 ${fmtNum(leg.zucai_odds)}`));
   if (leg.poly_prob_devig != null) meta.appendChild(el("span", "dc-leg-poly", `Poly ${fmtNum(leg.poly_prob_devig, 1)}%去水`));
-  const ev = leg.ev_pct_devig != null ? leg.ev_pct_devig : leg.ev_pct;
+  const ev = evOf(leg);
   if (ev != null && !Number.isNaN(Number(ev))) {
     meta.appendChild(el("span", `dc-leg-ev ${Number(ev) >= 0 ? "dc-pos" : "dc-neg"}`, `EV ${fmtSignedPct(ev)}`));
   }
@@ -440,7 +454,7 @@ function buildDecisionCard(d) {
     const bsrc = best || legs[0];
     const bdesc = bsrc ? (bsrc.desc || `${bsrc.market || ""} ${bsrc.outcome || ""}`.trim()) : "";
     const bv = bestVal != null ? bestVal : legValue(bsrc);
-    const ev = bsrc ? (bsrc.ev_pct_devig != null ? bsrc.ev_pct_devig : bsrc.ev_pct) : null;
+    const ev = evOf(bsrc);
     cap.appendChild(el("span", null, `最不亏 ${bdesc || "—"} · 去水 ${fmtNum(bv, 3)} · `));
     cap.appendChild(el("span", ev != null && Number(ev) >= 0 ? "cap-pos" : "cap-neg", `EV ${fmtSignedPct(ev)}`));
     axisWrap.appendChild(cap);
@@ -523,8 +537,9 @@ function buildDecisionCard(d) {
         const chip = el("span", `dc-best ${b.cls}`);
         chip.appendChild(signalDot(best.flag));
         chip.appendChild(el("span", "dc-best-desc", best.desc || `${best.market || ""} ${best.outcome || ""}`.trim() || "最不亏腿"));
-        if (best.ev_pct != null && !Number.isNaN(Number(best.ev_pct))) {
-          chip.appendChild(el("span", `dc-best-ev ${Number(best.ev_pct) >= 0 ? "dc-pos" : "dc-neg"}`, `EV ${fmtSignedPct(best.ev_pct)}`));
+        const bestEv = evOf(best);
+        if (bestEv != null) {
+          chip.appendChild(el("span", `dc-best-ev ${bestEv >= 0 ? "dc-pos" : "dc-neg"}`, `EV ${fmtSignedPct(bestEv)}`));
         }
         content.appendChild(chip);
       }
@@ -582,7 +597,7 @@ function buildScheduleRow(d) {
     chip.appendChild(signalDot(best.flag));
     // 列表只放短腿标签 (market+outcome), 完整 desc 留给右侧详情面板; 兜底截断由 CSS 保证
     chip.appendChild(el("span", "sr-chip-desc", `${best.market || ""} ${best.outcome || ""}`.trim() || best.desc || "最不亏"));
-    const ev = best.ev_pct;
+    const ev = evOf(best);
     if (ev != null && !Number.isNaN(Number(ev))) {
       chip.appendChild(el("span", Number(ev) >= 0 ? "ev-pos" : "ev-neg", fmtSignedPct(ev)));
     }
@@ -683,7 +698,12 @@ async function refreshValue(btn) {
   const original = btn ? btn.textContent : "";
   if (btn) { btn.disabled = true; btn.textContent = "重抓中…"; }
   try {
-    await apiSend("/api/refresh", "POST");
+    const resp = await apiSend("/api/refresh", "POST");
+    // HTTP 200 但 accepted=false(无快照/已有一轮在跑)= 没刷, 别装成功
+    if (resp && resp.accepted === false) {
+      if (btn) { btn.disabled = false; btn.textContent = `没刷: ${resp.reason || "被拒"}`; }
+      return;
+    }
     setTimeout(() => {
       refreshState();
       loadDecisions();
@@ -779,7 +799,7 @@ function renderWatchlist(items) {
         const b = flagBadge(h.flag);
         const hit = el("div", `wc-radar-hit ${b.cls}`);
         hit.appendChild(signalDot(h.flag));
-        const ev = h.ev_pct_devig;
+        const ev = evOf(h);
         const evCls = ev == null || Number.isNaN(Number(ev)) ? "" : Number(ev) >= 0 ? "wc-hit-pos" : "wc-hit-neg";
         const txt = `${h.market || ""} ${h.outcome || ""} 足彩 ${fmtNum(h.zucai_odds)}`.trim();
         hit.appendChild(el("span", "wc-hit-txt", txt));
@@ -798,8 +818,9 @@ async function pin(kind, key, note = "") {
   await refreshState();
 }
 async function unpin(id) {
+  // 后端只有 /api/watchlist/{id} 路由(旧代码回退的 ?id= 形式根本不存在, 恒 404)
   try { await apiSend(`/api/watchlist/${encodeURIComponent(id)}`, "DELETE"); }
-  catch (_) { await apiSend(`/api/watchlist?id=${encodeURIComponent(id)}`, "DELETE"); }
+  catch (err) { console.warn("unpin 失败:", err); }
   await refreshState();
 }
 

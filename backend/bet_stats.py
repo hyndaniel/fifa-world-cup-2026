@@ -7,7 +7,7 @@ import json
 import os
 import tempfile
 
-_TIERS = ("green", "yellow", "red")
+from .decision_contract import SETTLE_TIERS as _TIERS
 
 
 def load_ledger(data_dir: str = "data") -> dict:

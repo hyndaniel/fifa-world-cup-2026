@@ -11,28 +11,17 @@
 """
 from __future__ import annotations
 import argparse
-import base64
 import json
 import os
 import pathlib
 import sys
-import urllib.request
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(REPO, "tools"))
+import ingest_client as ic  # noqa: E402
 
-INGEST = os.environ.get("WC_INGEST_URL", "http://18.166.71.60:8000").rstrip("/")
-PW = os.environ.get("WC_INGEST_PW", "")
-USER = os.environ.get("WC_INGEST_USER", "admin")
-
-
-def _post(path, body):
-    data = json.dumps(body, ensure_ascii=False).encode("utf-8")
-    hdr = {"Content-Type": "application/json"}
-    if PW:
-        hdr["Authorization"] = "Basic " + base64.b64encode(f"{USER}:{PW}".encode()).decode()
-    req = urllib.request.Request(INGEST + path, data=data, headers=hdr, method="POST")
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return json.load(r)
+# 失败抛异常语义(推失败该让用户看到); 保留 _post 名字供测试打桩。实现在 ingest_client。
+_post = ic.post
 
 
 def push_tickets(ledger_path):

@@ -72,36 +72,43 @@ def poll_once(
             )
             continue
 
-        slug, _title = polymarket.find_slug(idx, hen, aen)
-        if not slug:
-            log.warning(
-                "skip %s %s/%s: poly 无对应 slug",
+        # 单场任何异常 (脏数据/解析失败) 只跳过该场, 不拖垮整批
+        try:
+            slug, _title = polymarket.find_slug(idx, hen, aen)
+            if not slug:
+                log.warning(
+                    "skip %s %s/%s: poly 无对应 slug",
+                    z.zucai_num, z.home_cn, z.away_cn,
+                )
+                continue
+
+            base, more = fetch_event(slug)
+            if not base:
+                log.warning(
+                    "skip %s %s/%s (slug=%s): poly event 为空",
+                    z.zucai_num, z.home_cn, z.away_cn, slug,
+                )
+                continue
+
+            probs = polymarket.parse_probs(base, more, hen, aen)
+            points = compute_value(z, probs, yellow_below=yellow_below)
+
+            match_id = db.upsert_match(
+                zucai_num=z.zucai_num,
+                home_cn=z.home_cn, away_cn=z.away_cn,
+                home_en=hen, away_en=aen,
+                poly_slug=slug,
+                ko_bj=z.ko_bj, cutoff_bj=z.cutoff_bj,
+            )
+            db.save_snapshot(match_id, "zucai", z.__dict__)
+            db.save_snapshot(match_id, "poly", probs.__dict__)
+            db.save_value_points(match_id, points)
+            processed += 1
+        except Exception:  # noqa: BLE001 — 单场失败不应中断整批
+            log.exception(
+                "skip %s %s/%s: 单场处理异常",
                 z.zucai_num, z.home_cn, z.away_cn,
             )
-            continue
-
-        base, more = fetch_event(slug)
-        if not base:
-            log.warning(
-                "skip %s %s/%s (slug=%s): poly event 为空",
-                z.zucai_num, z.home_cn, z.away_cn, slug,
-            )
-            continue
-
-        probs = polymarket.parse_probs(base, more, hen, aen)
-        points = compute_value(z, probs, yellow_below=yellow_below)
-
-        match_id = db.upsert_match(
-            zucai_num=z.zucai_num,
-            home_cn=z.home_cn, away_cn=z.away_cn,
-            home_en=hen, away_en=aen,
-            poly_slug=slug,
-            ko_bj=z.ko_bj, cutoff_bj=z.cutoff_bj,
-        )
-        db.save_snapshot(match_id, "zucai", z.__dict__)
-        db.save_snapshot(match_id, "poly", probs.__dict__)
-        db.save_value_points(match_id, points)
-        processed += 1
 
     log.info("poll_once: 处理 %d/%d 场", processed, len(matches))
     return processed

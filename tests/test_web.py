@@ -331,16 +331,36 @@ def test_refresh_triggers_poll_once_with_snapshot(client, monkeypatch):
     assert captured.get("n", 0) >= 1  # 原始信封被正确回放, 解析出 >=1 场
 
 
-def test_bets_summary_ok(client):
-    c, _ = client
+def test_bets_summary_ok(tmp_path):
+    # 用固定 fixture 台账, 不吃真 data/(真台账每天在长, 快照数值断言注定过期)
+    import json as _json
+    ddir = tmp_path / "data"
+    ddir.mkdir()
+    (ddir / "bet_ledger.json").write_text(_json.dumps({
+        "people": ["A", "B"],
+        "recommendations": [
+            {"date": "2026-06-24", "match": "m1", "leg": "x", "odds": 2.0,
+             "tier": "yellow", "result": "win", "settled": True},
+        ],
+        "tickets": [
+            {"date": "2026-06-24", "who": "A", "type": "t", "stake": 100,
+             "legs_hit": "4/4", "pnl": 300.0, "settled": True},
+            {"date": "2026-06-25", "who": "B", "type": "t", "stake": 50,
+             "legs_hit": "待结", "pnl": None, "settled": False},
+        ],
+    }, ensure_ascii=False), encoding="utf-8")
+    cfg = load_config("nope.toml")
+    app = create_app(db_path=str(tmp_path / "t.db"), cfg=cfg,
+                     require_auth=False, data_dir=str(ddir))
+    c = TestClient(app)
     r = c.get("/api/bets/summary")
     assert r.status_code == 200
     body = r.json()
     assert "recommendations" in body and "tickets" in body
-    # 默认 data_dir="data" → 真台账: green=0, 已结净 +496.92, 榜首是「HYN」(原"你")
-    assert body["recommendations"]["by_tier"]["green"]["total"] == 0
-    assert body["tickets"]["settled_pnl"] == 496.92
-    assert body["tickets"]["by_person"][0]["who"] == "HYN"
+    assert body["recommendations"]["by_tier"]["yellow"] == {"total": 1, "win": 1}
+    assert body["tickets"]["settled_pnl"] == 300.0
+    assert body["tickets"]["pending_stake"] == 50.0
+    assert body["tickets"]["by_person"][0]["who"] == "A"
 
 
 def test_bets_summary_missing_file_is_empty(tmp_path):

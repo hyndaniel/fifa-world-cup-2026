@@ -18,7 +18,10 @@
 依赖: 系统 curl(--compressed 解压) + stdlib。
 """
 from __future__ import annotations
-import json, re, subprocess, sys, statistics
+import json, os, re, subprocess, sys, statistics
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from backend.devig import devig_from_odds  # noqa: E402
 
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15"
 TRADE = "https://trade.500.com/jczq/"
@@ -98,12 +101,10 @@ def consensus(fid: str) -> dict | None:
     H = statistics.median(r[1] for r in rows)
     D = statistics.median(r[2] for r in rows)
     A = statistics.median(r[3] for r in rows)
-    imp = [1/H, 1/D, 1/A]; s = sum(imp)
     return {"n_books": len(rows),
             "euro": {"h": round(H, 2), "d": round(D, 2), "a": round(A, 2)},
-            "devig_pct": {"h": round(imp[0]/s*100, 1), "d": round(imp[1]/s*100, 1),
-                          "a": round(imp[2]/s*100, 1)},
-            "overround": round(s, 4),
+            "devig_pct": devig_from_odds({"h": H, "d": D, "a": A}),
+            "overround": round(1/H + 1/D + 1/A, 4),
             "sample": rows[:4]}
 
 
