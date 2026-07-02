@@ -616,20 +616,30 @@ function renderDecisions(decisions) {
   if (state.decFilter === "edge") rows = rows.filter((d) => decTopFlag(d) === "green");
   if (rows.length === 0) { mount.appendChild(el("div", "empty", "暂无符合条件的场次")); return; }
 
-  // 选中默认 = 第一行
-  if (!state.decSel || !rows.some((d) => d.match_key === state.decSel)) state.decSel = rows[0].match_key;
+  // 分组: 按"今天要不要下注"—— 未结束场按价值档拆三组 (绿=值得下手 / 黄=可考虑 / 红+skip=不建议),
+  // 已结束/进行中垫底。组内沿用后端(state.py)开球时间升序, filter 保序。
+  const upcoming = rows.filter((d) => d.view_status === "upcoming");
+  const isGreen = (d) => decTopFlag(d) === "green";
+  const isYellow = (d) => decTopFlag(d) === "yellow";
+  const groups = [
+    ["🟢 值得下手 · 真 +EV", upcoming.filter(isGreen), "grp-green"],
+    ["🟡 可以考虑 · 接近公允", upcoming.filter(isYellow), "grp-yellow"],
+    ["⚪ 不建议 / 观望 · -EV 或跳过", upcoming.filter((d) => !isGreen(d) && !isYellow(d)), "grp-skip"],
+    ["已结束 / 进行中", rows.filter((d) => d.view_status !== "upcoming"), "grp-done"],
+  ];
+
+  // 选中默认 = 首个"值得下手"(绿档)场; 无绿档则回落到列表首行
+  if (!state.decSel || !rows.some((d) => d.match_key === state.decSel)) {
+    state.decSel = (upcoming.find(isGreen) || rows[0]).match_key;
+  }
 
   const mobile = window.matchMedia("(max-width:820px)").matches;
   const sel = rows.find((d) => d.match_key === state.decSel) || rows[0];
-  const groups = [
-    ["今日 · 未结束", rows.filter((d) => d.view_status === "upcoming")],
-    ["已结束 / 进行中", rows.filter((d) => d.view_status !== "upcoming")],
-  ];
 
   const buildList = (container) => {
-    for (const [label, arr] of groups) {
+    for (const [label, arr, cls] of groups) {
       if (!arr.length) continue;
-      container.appendChild(el("div", "dec-group-h", label));
+      container.appendChild(el("div", `dec-group-h${cls ? " " + cls : ""}`, label));
       for (const d of arr) {
         const row = buildScheduleRow(d);
         if (d.match_key === state.decSel) row.classList.add("sel");
