@@ -63,15 +63,27 @@ def list_events(fetcher=_default_fetcher) -> dict:
     return idx
 
 
-def find_slug(idx: dict, hen: str, aen: str):
-    """在 {slug: title} 索引里找 title 同时含两队英文子串的第一个 event(顺序无关)。
+# 主盘(胜平负 moneyline) event 的 slug 以日期结尾, 例 fifwc-aus-egy-2026-07-03;
+# 同一对阵的子盘(first-to-score / halftime-result / exact-score / player-props …)
+# 是另立的 event, title 一样但 slug 在日期后附加后缀 —— 这些子盘没有胜平负结构,
+# 选中就会 parse 出 h/d/a 全 None、判 "ml 不全" 失败。故配对必须优先主盘。
+_MAIN_SLUG_RE = re.compile(r"\d{4}-\d{2}-\d{2}$")
 
+
+def find_slug(idx: dict, hen: str, aen: str):
+    """在 {slug: title} 索引里找 title 同时含两队英文子串的 event(顺序无关)。
+
+    同一对阵可能有多个 event(主盘 + 各子盘, title 相同), **优先返回主盘**
+    (slug 以日期结尾); 无主盘时退回第一个命中, 保持旧行为。
     返回 (slug, title) 或 (None, None)。
     """
-    for s, t in idx.items():
-        if hen in t and aen in t:
+    hits = [(s, t) for s, t in idx.items() if hen in t and aen in t]
+    if not hits:
+        return None, None
+    for s, t in hits:
+        if _MAIN_SLUG_RE.search(s):
             return s, t
-    return None, None
+    return hits[0]
 
 
 # ---------- 2. 拉某场 base / more-markets 原始 event ----------
