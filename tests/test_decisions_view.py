@@ -16,6 +16,19 @@ def test_parse_ko_dt_bad_returns_none():
     assert parse_ko_dt("6.27", NOW) is None  # 缺时间段
 
 
+def test_parse_ko_dt_iso_format():
+    """matches 表(赛程/赔率导入写入)用带年份的 ISO 格式, 与 decisions 表的
+    "M.D HH:MM" 并存; 回归: 此前只认后者, matches 表记录一律解析失败落
+    "unknown", 过期过滤形同虚设(南非vs韩国等陈旧场次永久霸榜 value_radar)。"""
+    assert parse_ko_dt("2026-06-25 09:00:00", NOW) == datetime(2026, 6, 25, 9, 0, tzinfo=BJ)
+    assert parse_ko_dt("2026-06-27 02:00", NOW) == datetime(2026, 6, 27, 2, 0, tzinfo=BJ)
+
+
+def test_ko_status_expired_iso_format():
+    # 南非vs韩国式场景: matches 表 ISO 格式 ko_bj, 开球已过 6h 衰减窗 → expired(而非 unknown)
+    assert ko_status("2026-06-25 09:00:00", NOW)[0] == "expired"
+
+
 def test_ko_status_upcoming():
     # 同晚稍后开球 → upcoming
     assert ko_status("6.26 23:30", NOW)[0] == "upcoming"
