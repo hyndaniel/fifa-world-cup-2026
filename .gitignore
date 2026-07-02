@@ -24,3 +24,4 @@ docs/superpowers/handoffs/
 
 # 报告 PDF 导出 (可从 reports/*.md 100%重新渲染, 不入库避免仓库体积膨胀)
 reports/pdf/
+reports/match-sims/pdf/
