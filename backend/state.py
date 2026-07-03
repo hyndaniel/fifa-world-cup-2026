@@ -69,6 +69,7 @@ def parse_ko_dt(ko_bj, now_bj):
     两种格式并存, 按来源表区分:
     - "M.D HH:MM"(decisions 表, 每日预测管线写入): 年份取 now_bj.year,
       以开球时刻为锚, 跨北京午夜的夜场(ko_bj 带次日日期前缀)天然连续。
+      日期分隔符容忍 "." 或 "/"(管线偶发写成 "7/4"), 二者等价。
     - "YYYY-MM-DD HH:MM[:SS]"(matches 表, 赛程/赔率导入写入): 自带年份直接解析。
     """
     s = str(ko_bj or "").strip()
@@ -80,10 +81,12 @@ def parse_ko_dt(ko_bj, now_bj):
         except ValueError:
             pass
     parts = s.split(" ")
-    if len(parts) != 2 or "." not in parts[0] or ":" not in parts[1]:
+    # 日期段分隔符 "." 与 "/" 等价: 归一到 "." 再拆, 防 "7/4" 被误判成 unknown。
+    date_part = parts[0].replace("/", ".") if parts else ""
+    if len(parts) != 2 or "." not in date_part or ":" not in parts[1]:
         return None
     try:
-        m_s, d_s = parts[0].split(".")
+        m_s, d_s = date_part.split(".")
         hh_s, mm_s = parts[1].split(":")
         return datetime(now_bj.year, int(m_s), int(d_s), int(hh_s), int(mm_s), tzinfo=BJ)
     except (ValueError, AttributeError):

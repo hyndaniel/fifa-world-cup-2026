@@ -2,9 +2,20 @@ from datetime import datetime, timezone, timedelta
 
 from backend.db import Db
 from backend.config import load_config
-from backend.state import build_state
+from backend.state import build_state, ko_status
 
 BJ = timezone(timedelta(hours=8))
+
+
+def test_ko_status_slash_date_separator():
+    """decisions 表的 "M.D HH:MM" 分隔符偶发写成斜杠 "7/4 02:00"(某日预测管线
+    join 时的格式偏离)。parse_ko_dt 须把 "/" 视同 ".", 否则整场落到 unknown、
+    被前端"未结束"筛选漏掉、只在灰色"全部"里露头(线上实测)。斜杠与点号须等价。"""
+    now = datetime(2026, 7, 3, 21, 0, tzinfo=BJ)  # 开球(7.4 02:00)之前
+    st_slash, dt_slash = ko_status("7/4 02:00", now)
+    st_dot, dt_dot = ko_status("7.4 02:00", now)
+    assert st_slash == "upcoming"
+    assert dt_slash == dt_dot == datetime(2026, 7, 4, 2, 0, tzinfo=BJ)
 
 
 def _seed(db):
