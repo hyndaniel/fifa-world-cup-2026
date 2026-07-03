@@ -85,14 +85,21 @@ def _wc_db_ready(wc_db_path: str, cache_path: str) -> bool:
       · match_results 有赛果却读不到任何队名 → False,判定 wc.db matches 正被别的进程
         重建的瞬时竞争(_team_names 只读打开失败 or 表被重建到空),跳过本轮重写以免
         『空白队名 + 掉末轮/非末轮桶』的坏版本覆盖已有好文件;下一轮 wc.db 可读时自愈。
+
+    局限(已知、可接受):① 只挡"队名整个读空",matches 被重建成"行在但 home/away 全 NULL"
+    的部分态不在范围(概率低);② 无法区分瞬时竞争 vs wc.db 长期缺失——后者会每轮静默跳过、
+    台账冻在上一版(仅 stderr 一行),这是"宁可不刷也不覆盖好数据"的取舍。
     """
     if _team_names(wc_db_path):
         return True
+    # 队名整个读空:分辨"真无数据(冷启动)"放行 vs "有赛果却读不到"拦截。
     try:
         conn = sqlite3.connect(cache_path)
-        conn.execute(_RESULTS_SCHEMA)  # 表不存在时防炸
-        n = conn.execute("SELECT COUNT(*) FROM match_results").fetchone()[0]
-        conn.close()
+        try:
+            conn.execute(_RESULTS_SCHEMA)  # 表不存在时防炸
+            n = conn.execute("SELECT COUNT(*) FROM match_results").fetchone()[0]
+        finally:
+            conn.close()
     except sqlite3.Error:
         return True  # 连 cache 都读不到 → 非本护栏场景, 放行走原有异常处理
     return n == 0
