@@ -77,6 +77,34 @@ def _team_names(wc_db_path: str) -> dict:
     return names
 
 
+def _wc_db_ready(wc_db_path: str, cache_path: str) -> bool:
+    """重写前自检:防偶发退化。返回 False = 本轮别重写台账/跑分卡(保上一版好数据)。
+
+    队名读得到 → True(正常放行)。队名整个读空时分两种:
+      · match_results 也空(全新库/清库)→ True,放行走首次自愈生成(不阻塞冷启动);
+      · match_results 有赛果却读不到任何队名 → False,判定 wc.db matches 正被别的进程
+        重建的瞬时竞争(_team_names 只读打开失败 or 表被重建到空),跳过本轮重写以免
+        『空白队名 + 掉末轮/非末轮桶』的坏版本覆盖已有好文件;下一轮 wc.db 可读时自愈。
+
+    局限(已知、可接受):① 只挡"队名整个读空",matches 被重建成"行在但 home/away 全 NULL"
+    的部分态不在范围(概率低);② 无法区分瞬时竞争 vs wc.db 长期缺失——后者会每轮静默跳过、
+    台账冻在上一版(仅 stderr 一行),这是"宁可不刷也不覆盖好数据"的取舍。
+    """
+    if _team_names(wc_db_path):
+        return True
+    # 队名整个读空:分辨"真无数据(冷启动)"放行 vs "有赛果却读不到"拦截。
+    try:
+        conn = sqlite3.connect(cache_path)
+        try:
+            conn.execute(_RESULTS_SCHEMA)  # 表不存在时防炸
+            n = conn.execute("SELECT COUNT(*) FROM match_results").fetchone()[0]
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return True  # 连 cache 都读不到 → 非本护栏场景, 放行走原有异常处理
+    return n == 0
+
+
 def render_mech_tags(cache_path: str, out_path: str, wc_db_path: str = DEFAULT_WC_DB) -> None:
     """从 match_results 全量重生成复盘对错标台账(确定性、自愈,同跑分卡)。
 
@@ -177,6 +205,14 @@ def main(argv=None) -> int:
 
     keys = backfill(args.cache, results)
     print(f"[backfill] 已录 {len(keys)} 场: {keys}" if keys else "[backfill] 无新赛果可录")
+
+    # 护栏:wc.db matches 正被别的进程重建的瞬时竞争里,队名会整个读空 → 若此时重写,
+    # 台账队名被清空、跑分卡掉末轮/非末轮桶,坏版本盖掉好文件(偶发但真出过)。有赛果却
+    # 读不到队名时跳过本轮重写、保上一版,rc=0 自愈——下一轮 wc.db 可读时补。空库照放行。
+    if not _wc_db_ready(args.wc_db, args.cache):
+        print("[backfill] wc.db 队名读空但已有赛果(多半 matches 表正被重建的瞬时竞争)——"
+              "跳过本轮台账/跑分卡重写,保留上一版好数据,下一轮自愈", file=sys.stderr)
+        return 0
 
     # 台账 + 跑分卡都从 db 全量重生成:确定性、自愈,不被"本次有无新赛果"门控
     # (上次崩了本次补)。台账重生成同时一次性补全历史行的队名。
