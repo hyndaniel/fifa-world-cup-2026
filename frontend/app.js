@@ -580,12 +580,27 @@ function koTime(ko) {
   const p = String(ko || "").trim().split(" ");
   return p.length === 2 ? p[1] : (ko || "—");
 }
-function buildScheduleRow(d) {
+// "M.D HH:MM" -> "M.D" 日期前缀 (缺则空串)
+function koDate(ko) {
+  const p = String(ko || "").trim().split(" ");
+  return p.length === 2 ? p[0] : "";
+}
+// "M.D HH:MM" -> 可比大小的数字键 (月日时分); 缺格式排最末. 同年内比较, 供倒序排列用
+function koSortKey(ko) {
+  const m = String(ko || "").trim().match(/(\d+)\.(\d+)\s+(\d+):(\d+)/);
+  if (!m) return -Infinity;
+  return ((+m[1]) * 100 + (+m[2])) * 10000 + (+m[3]) * 100 + (+m[4]);
+}
+function buildScheduleRow(d, showDate) {
   const flag = decTopFlag(d);
   const row = el("div", `sched-row flag-${flag === "skip" ? "skip" : flag}`);
   if (d.view_status !== "upcoming") row.classList.add("done");
   row.appendChild(signalDot(flag));
-  row.appendChild(el("div", "sr-time", koTime(d.ko_bj)));
+  const timeCell = el("div", "sr-time" + (showDate ? " sr-time-dated" : ""));
+  const dstr = showDate ? koDate(d.ko_bj) : "";
+  if (dstr) timeCell.appendChild(el("span", "sr-date", dstr));
+  timeCell.appendChild(el("span", "sr-hm", koTime(d.ko_bj)));
+  row.appendChild(timeCell);
   const home = `${d.home_flag ? d.home_flag + " " : ""}${d.home_cn || ""}`.trim();
   const away = `${d.away_flag ? d.away_flag + " " : ""}${d.away_cn || ""}`.trim();
   row.appendChild(el("div", "sr-match", home && away ? `${home} vs ${away}` : (d.match_key || "—")));
@@ -636,11 +651,15 @@ function renderDecisions(decisions) {
   const upcoming = rows.filter((d) => d.view_status === "upcoming");
   const isGreen = (d) => decTopFlag(d) === "green";
   const isYellow = (d) => decTopFlag(d) === "yellow";
+  // "全部" 视图跨多天累积: 已结束/进行中组按开球时间倒序 (最近的在最上), 并在行内标出具体日期
+  const showDate = state.decFilter === "all";
+  let done = rows.filter((d) => d.view_status !== "upcoming");
+  if (showDate) done = done.slice().sort((a, b) => koSortKey(b.ko_bj) - koSortKey(a.ko_bj));
   const groups = [
     ["🟢 值得下手 · 真 +EV", upcoming.filter(isGreen), "grp-green"],
     ["🟡 可以考虑 · 接近公允", upcoming.filter(isYellow), "grp-yellow"],
     ["⚪ 不建议 / 观望 · -EV 或跳过", upcoming.filter((d) => !isGreen(d) && !isYellow(d)), "grp-skip"],
-    ["已结束 / 进行中", rows.filter((d) => d.view_status !== "upcoming"), "grp-done"],
+    ["已结束 / 进行中", done, "grp-done"],
   ];
 
   // 选中默认 = 首个"值得下手"(绿档)场; 无绿档则回落到列表首行
@@ -656,7 +675,7 @@ function renderDecisions(decisions) {
       if (!arr.length) continue;
       container.appendChild(el("div", `dec-group-h${cls ? " " + cls : ""}`, label));
       for (const d of arr) {
-        const row = buildScheduleRow(d);
+        const row = buildScheduleRow(d, showDate);
         if (d.match_key === state.decSel) row.classList.add("sel");
         row.addEventListener("click", () => { state.decSel = d.match_key; renderDecisions(state._lastDecisions); });
         container.appendChild(row);
@@ -1062,17 +1081,9 @@ async function loadReportsList() {
       if (!byCat.has(dir)) byCat.set(dir, []);
       byCat.get(dir).push(r);
     });
-    // 比赛模拟按竞猜序号升序(解析不出的落末尾); 其余类目按日期倒序(最新在前)。
-    byCat.forEach((arr, dir) => {
-      if (dir === "match-sims") {
-        arr.sort((a, b) => {
-          const za = a.zucai == null ? Infinity : a.zucai;
-          const zb = b.zucai == null ? Infinity : b.zucai;
-          return za - zb || reportSortKey(b) - reportSortKey(a);
-        });
-      } else {
-        arr.sort((a, b) => reportSortKey(b) - reportSortKey(a));
-      }
+    // 所有类目(含比赛模拟)统一按日期倒序(最新在前)。
+    byCat.forEach((arr) => {
+      arr.sort((a, b) => reportSortKey(b) - reportSortKey(a));
     });
 
     // pill 顺序: REPORT_CATS 里有内容的, 末尾接"其他"(若有)
