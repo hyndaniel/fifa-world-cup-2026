@@ -3,7 +3,7 @@
     "name": "大热门被摆大巴逼平",
     "trigger": "强队 vs 龟缩弱旅,弱旅无出线压力/只想守",
     "effect": "平/0-0↑、进球↓",
-    "triggered": 4,
+    "triggered": 5,
     "hits": 0
   },
   {
@@ -24,8 +24,8 @@
     "name": "生死战必有胜负",
     "trigger": "平=双亡,无平局动机",
     "effect": "平↓",
-    "triggered": 4,
-    "hits": 2
+    "triggered": 5,
+    "hits": 3
   },
   {
     "name": "强队刷净胜球",
