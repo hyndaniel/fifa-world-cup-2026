@@ -1161,6 +1161,8 @@ html[data-theme="amber"] {
 .sched-row.sel{border-color:var(--bone-faint);background:var(--ink-3)}
 .sched-row.done{opacity:.5}
 .sched-row .sr-time{font-family:var(--font-mono);font-size:13px;color:var(--bone-dim);width:50px;flex:0 0 auto}
+.sched-row .sr-time.sr-time-dated{display:flex;flex-direction:column;line-height:1.25;width:52px}
+.sched-row .sr-time .sr-date{font-size:11px;color:var(--bone-faint)}
 .sched-row .sr-match{flex:0 1 auto;font-weight:600;font-size:14px;min-width:3.5em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sched-row .sr-v1{flex:0 0 auto;font-family:var(--font-mono);font-size:12px;color:var(--bone-faint);white-space:nowrap}
 /* 腿名药丸: 一行放不下整条掉到第二行右侧, 描述自动折行显示全 (不截断, 治长腿名「字叠一起」) */
