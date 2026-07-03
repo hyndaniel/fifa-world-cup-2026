@@ -1081,17 +1081,9 @@ async function loadReportsList() {
       if (!byCat.has(dir)) byCat.set(dir, []);
       byCat.get(dir).push(r);
     });
-    // 比赛模拟按竞猜序号升序(解析不出的落末尾); 其余类目按日期倒序(最新在前)。
-    byCat.forEach((arr, dir) => {
-      if (dir === "match-sims") {
-        arr.sort((a, b) => {
-          const za = a.zucai == null ? Infinity : a.zucai;
-          const zb = b.zucai == null ? Infinity : b.zucai;
-          return za - zb || reportSortKey(b) - reportSortKey(a);
-        });
-      } else {
-        arr.sort((a, b) => reportSortKey(b) - reportSortKey(a));
-      }
+    // 所有类目(含比赛模拟)统一按日期倒序(最新在前)。
+    byCat.forEach((arr) => {
+      arr.sort((a, b) => reportSortKey(b) - reportSortKey(a));
     });
 
     // pill 顺序: REPORT_CATS 里有内容的, 末尾接"其他"(若有)
