@@ -84,6 +84,8 @@ def test_main_rerun_failure_returns_1_but_keeps_record(tmp_path, monkeypatch, ca
     db = str(tmp_path / "t.db")
     _empty_odds(db)
     out = tmp_path / "ledger.md"
+    wc = str(tmp_path / "wc.db")                        # 护栏放行需可读 wc.db(才能走到重生成)
+    _seed_wc_names(wc, [("周四055", "土耳其", "美国")])
     monkeypatch.setattr(B, "fetch_results",
                         lambda *a, **k: [MatchResult("周四055", 2, 0, True)])
 
@@ -91,7 +93,7 @@ def test_main_rerun_failure_returns_1_but_keeps_record(tmp_path, monkeypatch, ca
         raise RuntimeError("跑分卡炸了")
     monkeypatch.setattr(B, "_rerun_scorecard", _boom)
     rc = B.main(["--once", "--cache", db, "--tags-out", str(out),
-                 "--scenario-lib", str(tmp_path / "s.json")])
+                 "--wc-db", wc, "--scenario-lib", str(tmp_path / "s.json")])
     assert rc == 1
     assert "失败" in capsys.readouterr().err
     # record 已落库
@@ -282,6 +284,8 @@ def test_main_scenario_rebuild_failure_returns_1_but_keeps_record(tmp_path, monk
     # 锚住:rebuild_scenario_hits 在同一自愈 try 块、失败也走统一错误契约。
     db = str(tmp_path / "t.db")
     _empty_odds(db)
+    wc = str(tmp_path / "wc.db")                        # 护栏放行需可读 wc.db(才能走到重生成)
+    _seed_wc_names(wc, [("周四055", "土耳其", "美国")])
     monkeypatch.setattr(B, "fetch_results",
                         lambda *a, **k: [MatchResult("周四055", 2, 0, True)])
     monkeypatch.setattr(B, "_rerun_scorecard", lambda *a, **k: None)
@@ -290,7 +294,7 @@ def test_main_scenario_rebuild_failure_returns_1_but_keeps_record(tmp_path, monk
         raise RuntimeError("剧本台账炸了")
     monkeypatch.setattr(B, "rebuild_scenario_hits", _boom)
     rc = B.main(["--once", "--cache", db, "--tags-out", str(tmp_path / "ledger.md"),
-                 "--scenario-lib", str(tmp_path / "s.json")])
+                 "--wc-db", wc, "--scenario-lib", str(tmp_path / "s.json")])
     assert rc == 1
     assert "失败" in capsys.readouterr().err
     conn = sqlite3.connect(db)                          # record 仍落库,未被吞
@@ -298,3 +302,27 @@ def test_main_scenario_rebuild_failure_returns_1_but_keeps_record(tmp_path, monk
                      ("周四055",)).fetchone()[0]
     conn.close()
     assert n == 1
+
+
+def test_main_skips_rewrite_when_wcdb_unreadable_but_results_exist(tmp_path, monkeypatch):
+    # 护栏:已有赛果(match_results 非空)却读不到 wc.db 队名(matches 表正被别的进程重建的
+    # 瞬时竞争)→ main 跳过台账/跑分卡重写、保留上一版好数据、rc=0 自愈,下一轮 wc.db 可读时补。
+    # 杀掉偶发退化『用空白队名 + 掉末轮桶的坏版本覆盖已有好文件』。
+    import tools.v2_report as V
+    db = str(tmp_path / "t.db")
+    _empty_odds(db)
+    B.backfill(db, [MatchResult("周四055", 2, 0, True)])   # 有赛果
+    ledger = tmp_path / "ledger.md"                        # 预置上一版"好台账"(带队名)
+    good = ("# 复盘对错标\n\n| ts | 场次 | 对阵 | 实际 | v1 | v2 | 市场 |\n"
+            "|---|---|---|---|---|---|---|\n| x | 周四055 | 厄瓜多尔 vs 德国 | h | ❌ | ❌ | ❌ |\n")
+    ledger.write_text(good, encoding="utf-8")
+    card = tmp_path / "card.md"
+    card.write_text("旧跑分卡带末轮桶\n", encoding="utf-8")
+    monkeypatch.setattr(V, "DEFAULT_OUT", str(card))       # 防真 v2_report 覆写实机跑分卡
+    monkeypatch.setattr(B, "fetch_results", lambda *a, **k: [])
+    rc = B.main(["--once", "--cache", db, "--tags-out", str(ledger),
+                 "--wc-db", str(tmp_path / "nope.db"),      # wc.db 读不到(模拟瞬时竞争)
+                 "--scenario-lib", str(tmp_path / "s.json")])
+    assert rc == 0
+    assert ledger.read_text(encoding="utf-8") == good       # 台账未被空白覆盖
+    assert card.read_text(encoding="utf-8") == "旧跑分卡带末轮桶\n"   # 跑分卡未被重写
