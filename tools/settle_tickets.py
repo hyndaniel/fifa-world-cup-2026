@@ -1,332 +1,376 @@
 # -*- coding: utf-8 -*-
-"""WC2026 票据结算引擎: 按队名匹配比分, 算让球/比分/复式/双选 payout。
-全场比分; 半全场(需半场比分)单列、不在此算。"""
-from itertools import combinations
+"""WC2026 结算引擎(数据驱动)。
 
-# ---- 比分库 (home, away) -> (hs, as_)  按队名, 编号无关 ----
-RAW = """
-墨西哥,南非,2,0
-韩国,捷克,2,1
-加拿大,波黑,1,1
-美国,巴拉圭,4,1
-卡塔尔,瑞士,1,1
-巴西,摩洛哥,1,1
-海地,苏格兰,0,1
-澳大利亚,土耳其,2,0
-德国,库拉索,7,1
-科特迪瓦,厄瓜多尔,1,0
-荷兰,日本,2,2
-瑞典,突尼斯,5,1
-西班牙,佛得角,0,0
-比利时,埃及,1,1
-沙特,乌拉圭,1,1
-伊朗,新西兰,2,2
-法国,塞内加尔,3,1
-伊拉克,挪威,1,4
-阿根廷,阿尔及利亚,3,0
-奥地利,约旦,3,1
-葡萄牙,刚果金,1,1
-乌兹别克,哥伦比亚,1,3
-英格兰,克罗地亚,4,2
-加纳,巴拿马,1,0
-墨西哥,韩国,1,0
-捷克,南非,1,1
-加拿大,卡塔尔,6,0
-瑞士,波黑,4,1
-巴西,海地,3,0
-苏格兰,摩洛哥,0,1
-美国,澳大利亚,2,0
-土耳其,巴拉圭,0,1
-德国,科特迪瓦,2,1
-厄瓜多尔,库拉索,0,0
-荷兰,瑞典,5,1
-突尼斯,日本,0,4
-比利时,伊朗,0,0
-新西兰,埃及,1,3
-西班牙,沙特,4,0
-乌拉圭,佛得角,2,2
-法国,伊拉克,3,0
-挪威,塞内加尔,3,2
-阿根廷,奥地利,2,0
-葡萄牙,乌兹别克,5,0
-英格兰,加纳,0,0
-巴拿马,克罗地亚,0,1
-哥伦比亚,刚果金,1,0
-瑞士,加拿大,2,1
-波黑,卡塔尔,3,1
-苏格兰,巴西,0,3
-摩洛哥,海地,4,2
-南非,韩国,1,0
-捷克,墨西哥,0,3
-厄瓜多尔,德国,2,1
-库拉索,科特迪瓦,0,2
-突尼斯,荷兰,1,3
-日本,瑞典,1,1
-巴拉圭,澳大利亚,0,0
-土耳其,美国,3,2
-挪威,法国,1,4
-塞内加尔,伊拉克,5,0
-佛得角,沙特,0,0
-乌拉圭,西班牙,0,1
-埃及,伊朗,1,1
-新西兰,比利时,1,5
-克罗地亚,加纳,2,1
-巴拿马,英格兰,0,2
-哥伦比亚,葡萄牙,0,0
-刚果金,乌兹别克,3,1
-阿尔及利亚,奥地利,3,3
-约旦,阿根廷,1,3
-南非,加拿大,0,1
+设计: `结算` skill 里 LLM 把每张待结票的 picks 文本翻成结构化 legs, 本引擎只做**确定性算术**——
+命中判定 / 双选 / 复式·单场固定 payout / 注数·odds_max 双校验 / 幂等写回 ledger。
+让球沿用**竞彩整数让球胜平负三路模型**: net 净差 >0→'W' / =0→'D'(走盘归平, 非退款) / <0→'L'。
+
+赛果按 (home_goals, away_goals) 注入; 场次以三位数场次号(如 "086")为键, 对齐 ledger picks。
 """
-S = {}
-for ln in RAW.strip().splitlines():
-    h, a, hs, as_ = ln.split(",")
-    S[(h, a)] = (int(hs), int(as_))
+from __future__ import annotations
 
-def score(h, a):
-    if (h, a) in S: return S[(h, a)]
-    raise KeyError(f"缺比分: {h} vs {a}")
+import math
+import re
+import sqlite3
+from itertools import combinations
+from math import prod
 
-def hcap(h, a, line, want):
-    """让球: home+line vs away → 'W'(让胜)/'D'(让平)/'L'(让负); want 命中?"""
-    hs, as_ = score(h, a)
-    x = (hs + line) - as_
-    o = 'W' if x > 0 else ('L' if x < 0 else 'D')
-    return o == want
 
-def x12(h, a, want):  # 不让球胜平负: want 'W'/'D'/'L' (主胜/平/客胜)
-    return hcap(h, a, 0, want)
+# ============ 命中原子(赛果注入, 无全局比分库)============
+def outcome(hs: int, as_: int) -> str:
+    """主队视角胜平负码: 'h' 主胜 / 'd' 平 / 'a' 客胜。"""
+    return "h" if hs > as_ else ("a" if hs < as_ else "d")
 
-def exact(h, a, hs_pick, as_pick):
-    hs, as_ = score(h, a)
-    return hs == hs_pick and as_ == as_pick
 
-# ---- 一条腿: 给 (是否命中, 命中时赔率); 支持双选 ----
-# leg = list of (cond_fn, odds); 命中 = 任一 cond 真, 取该 odds
-def leg_eval(picks):
-    for cond, odds in picks:
-        if cond():
-            return True, odds
+def had_hit(hs: int, as_: int, sel: str) -> bool:
+    """胜平负: sel ∈ {'h','d','a'}。"""
+    return outcome(hs, as_) == sel
+
+
+def hcap_hit(hs: int, as_: int, line: int, sel: str) -> bool:
+    """竞彩整数让球胜平负: 主队让 N 记 line=-N、受让 N 记 line=+N。
+    net=(hs+line)-as_ → >0 'W' / =0 'D'(走盘归平) / <0 'L'; 对 sel ∈ {'W','D','L'}。"""
+    net = (hs + line) - as_
+    o = "W" if net > 0 else ("L" if net < 0 else "D")
+    return o == sel
+
+
+def exact_hit(hs: int, as_: int, phs: int, pas: int) -> bool:
+    """比分(有序主客)。"""
+    return hs == phs and as_ == pas
+
+
+def goals_hit(hs: int, as_: int, n: int) -> bool:
+    """总进球数。"""
+    return (hs + as_) == n
+
+
+# ============ 单腿双选 ============
+def _pick_hit(pick: dict, hs: int, as_: int) -> bool:
+    k = pick["kind"]
+    if k == "had":
+        return had_hit(hs, as_, pick["sel"])
+    if k == "hcap":
+        return hcap_hit(hs, as_, pick["line"], pick["sel"])
+    if k == "exact":
+        return exact_hit(hs, as_, pick["hs"], pick["as_"])
+    if k == "goals":
+        return goals_hit(hs, as_, pick["n"])
+    raise ValueError(f"未知 pick.kind: {k!r}")
+
+
+def eval_leg(picks: list[dict], hs: int, as_: int):
+    """一条腿(可含多个双选 pick): 返回 (是否命中, 命中赔率)。
+    命中 = 任一 pick 真; 多 pick 都真时取第一条(单场只有一个结果, 防御性短路)。"""
+    for p in picks:
+        if _pick_hit(p, hs, as_):
+            return True, p["odds"]
     return False, None
 
-def settle(name, legs, guan_levels, mult, stake, note=""):
-    """legs: list of picks-lists. guan_levels: 关数列表(单式=只[M]). mult:倍数. stake:投注."""
-    M = len(legs)
-    ev = [leg_eval(p) for p in legs]
-    hits = sum(1 for h, _ in ev if h)
-    unit = 2 * mult
-    payout = 0.0
-    wins = 0
+
+# ============ payout(unit = 2 × 倍数)============
+def combo_payout(leg_results, guan_levels, unit) -> float:
+    """复式/串关: Σ_关数k Σ_C(M,k)组合 [组合内每腿都命中]·unit·∏命中赔率。
+    leg_results: list of (hit, odds)。2串1→guan=[2], N场2-K关复式→guan=[2..K]。"""
+    M = len(leg_results)
+    total = 0.0
     for k in guan_levels:
-        if k > M: continue
+        if k > M:
+            continue
         for combo in combinations(range(M), k):
-            if all(ev[i][0] for i in combo):
-                prod = 1.0
-                for i in combo: prod *= ev[i][1]
-                payout += unit * prod
-                wins += 1
+            if all(leg_results[i][0] for i in combo):
+                total += unit * prod(leg_results[i][1] for i in combo)
+    return total
+
+
+def single_fixed_payout(leg_results, unit) -> float:
+    """单场固定(每场独立结算): 每腿命中各自派彩再求和。"""
+    return sum(unit * odds for hit, odds in leg_results if hit)
+
+
+# ============ 校验器(注数 / 票面最高奖金反算)============
+def count_notes(legs, guan_levels, mode) -> int:
+    """从结构反算单倍注数。combo: Σ_k Σ_组合 ∏腿内选项数; single_fixed: Σ腿 选项数。
+    legs: list of picks-lists(每腿是 pick 列表, 双选=多个 pick)。"""
+    if mode == "single_fixed":
+        return sum(len(leg) for leg in legs)
+    M = len(legs)
+    total = 0
+    for k in guan_levels:
+        if k > M:
+            continue
+        for combo in combinations(range(M), k):
+            total += prod(len(legs[i]) for i in combo)
+    return total
+
+
+def max_payout(legs, guan_levels, mode, unit) -> float:
+    """票面理论最高奖金: 每腿取其选项最高赔率(各场独立可同时命中最高档), 全组合派彩。
+    combo: Σ_k Σ_组合 unit·∏腿最高赔; single_fixed: Σ腿 unit·腿最高赔。"""
+    def leg_max(leg):
+        return max(p["odds"] for p in leg)
+    if mode == "single_fixed":
+        return sum(unit * leg_max(leg) for leg in legs)
+    M = len(legs)
+    total = 0.0
+    for k in guan_levels:
+        if k > M:
+            continue
+        for combo in combinations(range(M), k):
+            total += unit * prod(leg_max(legs[i]) for i in combo)
+    return total
+
+
+# ============ settle_ticket: 单张票编排 ============
+# odds_max 反算与票面对账的容差: 终端中间乘积会取整, 大票会累积零点几的偏差 → 用相对容差兜。
+_OMAX_REL_TOL = 2e-3
+_OMAX_ABS_TOL = 0.6
+
+
+def settle_ticket(ticket: dict, results: dict) -> dict:
+    """给一张结构化票 + 赛果字典(场次号 → (home_goals, away_goals), 只含完赛场次),
+    返回 {status, legs_hit, pnl, payout, reason}。
+
+    status: '已结' / '待结'(有腿未开赛) / '待人工'(半全场 / 注数或 odds_max 校验不过)。
+    只有 '已结' 才给 pnl(其余 None)。不写库(写回见 write_back)。
+    """
+    legs = ticket["legs"]
+    mode = ticket.get("mode", "combo")
+    guan = ticket.get("guan_levels", [])
+    unit = 2 * ticket["mult"]
+    stake = ticket["stake"]
+    leg_picks = [leg["picks"] for leg in legs]
+
+    def _fail(reason):
+        return {"status": "待人工", "legs_hit": "待人工", "pnl": None,
+                "payout": None, "reason": reason}
+
+    # 1) 半全场: 全库无半场比分, 无法自动结算
+    if any(p["kind"] == "htft" for leg in legs for p in leg["picks"]):
+        return _fail("半全场玩法无半场比分数据源, 需人工结算")
+
+    # 2) 注数校验
+    n = count_notes(leg_picks, guan, mode)
+    if n != ticket["expect_notes"]:
+        return _fail(f"注数校验不过: 结构反算 {n} 注 ≠ 票面 {ticket['expect_notes']} 注")
+
+    # 3) odds_max 校验
+    mp = max_payout(leg_picks, guan, mode, unit)
+    omax = ticket["odds_max"]
+    if not math.isclose(mp, omax, rel_tol=_OMAX_REL_TOL, abs_tol=_OMAX_ABS_TOL):
+        return _fail(f"odds_max 校验不过: 结构反算最高派彩 {mp:.2f} ≠ 票面 {omax:.2f}")
+
+    # 4) 部分开赛: 任一腿的场次不在 results → 保持待结, 只回填进度串
+    unfinished = [leg["match_key"] for leg in legs if leg["match_key"] not in results]
+    if unfinished:
+        toks = []
+        hit_n = 0
+        for leg in legs:
+            mk = leg["match_key"]
+            if mk in results:
+                hit, _ = eval_leg(leg["picks"], *results[mk])
+                toks.append(f"{mk}{'✅' if hit else '❌'}")
+                hit_n += 1 if hit else 0
+            else:
+                toks.append(f"{mk}待结")
+        return {"status": "待结", "legs_hit": " ".join(toks) + " (部分待结)",
+                "pnl": None, "payout": None, "reason": ""}
+
+    # 5) 全部完赛 → 算账
+    leg_results = [eval_leg(leg["picks"], *results[leg["match_key"]]) for leg in legs]
+    if mode == "single_fixed":
+        payout = single_fixed_payout(leg_results, unit)
+    else:
+        payout = combo_payout(leg_results, guan, unit)
     pnl = payout - stake
-    print(f"{name:22s} 命中{hits}/{M}  中奖组合{wins:>2d}  派彩{payout:8.2f}  盈亏{pnl:+9.2f}  注{stake}  {note}")
-    return pnl
+    M = len(legs)
+    toks = [f"{leg['match_key']}{'✅' if leg_results[i][0] else '❌'}" for i, leg in enumerate(legs)]
+    hit_n = sum(1 for h, _ in leg_results if h)
+    return {"status": "已结", "legs_hit": f"命中{hit_n}/{M} " + " ".join(toks),
+            "pnl": round(pnl, 2), "payout": round(payout, 2), "reason": ""}
 
-P = {}  # person -> total settled pnl
-def add(person, pnl):
-    P[person] = P.get(person, 0.0) + pnl
 
-print("="*90)
-# ============ 你 / ME ============
-# ME9.png 比分6选4复式 049-054 ¥30 1倍 (=台账 你注1)
-add("你", settle("ME9png 比分4复式049-54", [
-    [(lambda: exact("瑞士","加拿大",1,1),4.60)],
-    [(lambda: exact("波黑","卡塔尔",2,1),6.00)],
-    [(lambda: exact("苏格兰","巴西",0,2),5.35)],
-    [(lambda: exact("摩洛哥","海地",3,0),5.20)],
-    [(lambda: exact("南非","韩国",0,1),6.00)],
-    [(lambda: exact("捷克","墨西哥",1,1),6.00)],
-], [4], 1, 30, "=台账你注1/也=LYH12"))
-# ME14 比分2串1 003-004 ¥30 15倍
-add("你", settle("ME14 比分2串1", [
-    [(lambda: exact("加拿大","波黑",1,1),5.00)],
-    [(lambda: exact("美国","巴拉圭",2,0),5.80)],
-], [2], 15, 30))
-# ME10 混合8串1 ¥100 50倍 (按队名)
-add("你", settle("ME10 混合8串1", [
-    [(lambda: x12("苏格兰","摩洛哥",'L'),1.52)],
-    [(lambda: hcap("巴西","海地",-1,'W'),1.63)],  # 让胜假设-1
-    [(lambda: x12("德国","科特迪瓦",'W'),1.40)],
-    [(lambda: hcap("西班牙","沙特",-1,'W'),1.83)],
-    [(lambda: x12("乌拉圭","佛得角",'W'),1.31)],
-    [(lambda: x12("比利时","伊朗",'W'),1.33)],
-    [(lambda: x12("土耳其","巴拉圭",'W'),1.78)],
-    [(lambda: x12("突尼斯","日本",'L'),1.40)],
-], [8], 50, 100, "几条让球线假设-1,低置信"))
-# ME11 混合4串1 ¥100 50倍
-add("你", settle("ME11 混合4串1", [
-    [(lambda: hcap("法国","塞内加尔",-1,'W'),2.07)],
-    [(lambda: hcap("伊拉克","挪威",2,'L'),2.29)],
-    [(lambda: hcap("阿根廷","阿尔及利亚",-1,'W'),1.96)],
-    [(lambda: x12("英格兰","克罗地亚",'W'),1.53)],
-], [4], 50, 100))
-# ME12 混合4串1 ¥50 25倍
-add("你", settle("ME12 混合4串1", [
-    [(lambda: hcap("德国","库拉索",-1,'D'),4.80)],  # 让平假设-1? 高赔可疑
-    [(lambda: x12("荷兰","日本",'D'),3.43)],
-    [(lambda: x12("科特迪瓦","厄瓜多尔",'D'),2.65)],
-    [(lambda: x12("瑞典","突尼斯",'W'),1.71)],
-], [4], 25, 50, "德让平线不确定,低置信"))
-# ME13 混合4串1 ¥40 20倍
-add("你", settle("ME13 混合4串1", [
-    [(lambda: hcap("卡塔尔","瑞士",1,'D'),3.42)],  # 让平 假设+1(卡受让)
-    [(lambda: hcap("巴西","摩洛哥",-1,'D'),2.96)], # 让平 假设-1
-    [(lambda: x12("海地","苏格兰",'L'),1.33)],
-    [(lambda: x12("澳大利亚","土耳其",'L'),1.50)],
-], [4], 20, 40, "让平线假设,低置信"))
-# ME15 混合8串1 ¥80 10倍 (002,008双选)
-add("你", settle("ME15 混合8串1", [
-    [(lambda: x12("墨西哥","南非",'W'),1.26)],
-    [(lambda: x12("韩国","捷克",'W'),2.40),(lambda: x12("韩国","捷克",'D'),2.81)],
-    [(lambda: x12("加拿大","波黑",'W'),1.62)],
-    [(lambda: x12("美国","巴拉圭",'D'),3.10)],
-    [(lambda: x12("海地","苏格兰",'L'),1.31)],
-    [(lambda: x12("澳大利亚","土耳其",'D'),3.45),(lambda: x12("澳大利亚","土耳其",'L'),1.55)],
-    [(lambda: hcap("卡塔尔","瑞士",1,'D'),3.82)],
-    [(lambda: hcap("巴西","摩洛哥",-1,'D'),3.26)],
-], [8], 10, 80, "让平线假设,低置信"))
-# ME9.jpg 让球4串1 ¥400 50倍 (042,043双选)
-add("你", settle("ME9jpg 让球4串1", [
-    [(lambda: hcap("阿根廷","奥地利",-1,'W'),2.02)],
-    [(lambda: hcap("法国","伊拉克",-3,'W'),2.35),(lambda: hcap("法国","伊拉克",-3,'D'),4.20)],
-    [(lambda: hcap("挪威","塞内加尔",-1,'W'),3.57),(lambda: hcap("挪威","塞内加尔",-1,'D'),3.78)],
-    [(lambda: hcap("英格兰","加纳",-2,'W'),3.43)],
-], [4], 50, 400))
-# ME5 混合4关复式(6选4) 061-066 ¥100 2倍 (063双选)
-add("你", settle("ME5 混合4复式061-66", [
-    [(lambda: x12("挪威","法国",'L'),1.50)],
-    [(lambda: hcap("塞内加尔","伊拉克",-2,'D'),3.75)],  # 让平 假设-2
-    [(lambda: x12("佛得角","沙特",'W'),2.25),(lambda: x12("佛得角","沙特",'L'),2.62)],
-    [(lambda: hcap("乌拉圭","西班牙",1,'L'),2.45)],  # 让负+1
-    [(lambda: x12("埃及","伊朗",'D'),2.50)],
-    [(lambda: hcap("新西兰","比利时",2,'W'),2.62)],  # 让胜+2
-], [4], 2, 100, "部分让球线假设,中低置信"))
-# ME3 混合2-6复式 067-072 ¥114 1倍
-add("你", settle("ME3 混合2-6复式067-72", [
-    [(lambda: hcap("克罗地亚","加纳",-1,'D'),3.10)],
-    [(lambda: hcap("巴拿马","英格兰",2,'D'),4.10)],
-    [(lambda: hcap("哥伦比亚","葡萄牙",1,'D'),3.55)],
-    [(lambda: hcap("刚果金","乌兹别克",-1,'D'),3.13)],
-    [(lambda: x12("阿尔及利亚","奥地利",'L'),2.80)],
-    [(lambda: hcap("约旦","阿根廷",2,'D'),3.90)],
-], [2,3,4,5,6], 1, 114, "≈lyz3结构,选项略异"))
+# ============ 赛果加载(odds_cache.db → {场次号: (hs,as_)})============
+def load_results(cache_db_path: str) -> dict:
+    """读 `.cache/odds_cache.db` 的 match_results, 按 match_key 尾三位数字建键。
+    表/库缺失一律返回 {}(不抛), 便于赛前空跑。"""
+    out: dict = {}
+    try:
+        c = sqlite3.connect(f"file:{cache_db_path}?mode=ro", uri=True)
+    except sqlite3.OperationalError:
+        return out
+    try:
+        rows = c.execute("SELECT match_key, home_goals, away_goals FROM match_results").fetchall()
+    except sqlite3.OperationalError:
+        return out
+    finally:
+        c.close()
+    for mk, hg, ag in rows:
+        m = re.search(r"(\d+)$", mk or "")
+        if m and hg is not None and ag is not None:
+            out[m.group(1)] = (int(hg), int(ag))
+    return out
 
-# ============ LYZ ============
-add("LYZ", settle("lyz3 混合2-6复式067-72", [
-    [(lambda: hcap("克罗地亚","加纳",-1,'D'),3.00)],
-    [(lambda: hcap("巴拿马","英格兰",2,'D'),4.10)],
-    [(lambda: hcap("哥伦比亚","葡萄牙",1,'D'),3.55)],
-    [(lambda: hcap("刚果金","乌兹别克",-1,'W'),2.64)],
-    [(lambda: hcap("阿尔及利亚","奥地利",-1,'D'),4.35)],
-    [(lambda: hcap("约旦","阿根廷",2,'D'),3.90)],
-], [2,3,4,5,6], 1, 114, "应=+584.43核对"))
 
-# ============ ZFW ============
-# 台账 ZFW 4串1复式 049-054 ¥82
-add("ZFW", settle("ZFW台账 4复式049-54", [
-    [(lambda: hcap("瑞士","加拿大",-1,'D'),3.86)],
-    [(lambda: x12("波黑","卡塔尔",'L'),6.70)],
-    [(lambda: hcap("苏格兰","巴西",-1,'L'),1.66)],  # 巴西-1让负=苏格兰净负2+? 实0-3
-    [(lambda: hcap("摩洛哥","海地",-2,'W'),2.15)],
-    [(lambda: x12("南非","韩国",'D'),3.87),(lambda: x12("南非","韩国",'L'),1.44)],
-    [(lambda: hcap("捷克","墨西哥",1,'D'),3.50)],
-], [4], 1, 82, "应≈2/6命中→全损"))
-# ZFW3 4关复式 055-060 ¥50 (057双选)
-add("ZFW", settle("ZFW3 4复式055-60", [
-    [(lambda: x12("厄瓜多尔","德国",'L'),1.38)],
-    [(lambda: hcap("库拉索","科特迪瓦",2,'D'),3.60)],
-    [(lambda: hcap("突尼斯","荷兰",2,'D'),4.20),(lambda: hcap("突尼斯","荷兰",2,'L'),1.64)],
-    [(lambda: x12("日本","瑞典",'L'),4.35)],
-    [(lambda: x12("巴拉圭","澳大利亚",'L'),3.50)],
-    [(lambda: x12("土耳其","美国",'L'),1.65)],
-], [4], 1, 50))
-# ZFW1 4关复式 061-066 ¥82 (062,066双选)
-add("ZFW", settle("ZFW1 4复式061-66", [
-    [(lambda: x12("挪威","法国",'L'),1.50)],
-    [(lambda: hcap("塞内加尔","伊拉克",-2,'W'),2.37),(lambda: hcap("塞内加尔","伊拉克",-2,'D'),3.75)],
-    [(lambda: x12("佛得角","沙特",'L'),2.62)],
-    [(lambda: x12("乌拉圭","西班牙",'L'),1.47)],
-    [(lambda: x12("埃及","伊朗",'W'),2.15)],
-    [(lambda: hcap("新西兰","比利时",2,'D'),3.85),(lambda: hcap("新西兰","比利时",2,'L'),2.05)],
-], [4], 1, 82))
-# ZFW2 3关复式 061-066 ¥60 (066双选)
-add("ZFW", settle("ZFW2 3复式061-66", [
-    [(lambda: hcap("挪威","法国",1,'D'),3.30)],
-    [(lambda: hcap("塞内加尔","伊拉克",-2,'L'),2.27)],
-    [(lambda: x12("佛得角","沙特",'L'),2.62)],
-    [(lambda: hcap("乌拉圭","西班牙",1,'D'),3.45)],
-    [(lambda: x12("埃及","伊朗",'W'),2.20)],
-    [(lambda: hcap("新西兰","比利时",2,'W'),2.58),(lambda: hcap("新西兰","比利时",2,'D'),3.95)],
-], [3], 1, 60))
+# ============ 幂等写回 ledger ============
+def write_back(ledger: dict, results_by_code: dict) -> dict:
+    """把 {唯一码: SettleResult} 写回 ledger['tickets](按唯一码匹配)。幂等: 已结票跳过不覆盖。
+    已结→写 pnl/settled/legs_hit; 待结→只更新进度串保持待结; 待人工→记 reason 保持待结。"""
+    counts = {"settled": 0, "pending": 0, "manual": 0, "skipped": 0}
+    for t in ledger.get("tickets", []):
+        code = t.get("唯一码")
+        if code not in results_by_code:
+            continue
+        if t.get("settled"):
+            counts["skipped"] += 1
+            continue
+        r = results_by_code[code]
+        st = r["status"]
+        if st == "已结":
+            t["pnl"] = r["pnl"]
+            t["legs_hit"] = r["legs_hit"]
+            t["settled"] = True
+            counts["settled"] += 1
+        elif st == "待结":
+            t["legs_hit"] = r["legs_hit"]
+            t["settled"] = False
+            counts["pending"] += 1
+        else:  # 待人工
+            t["legs_hit"] = f"待人工: {r.get('reason', '')}"
+            t["settled"] = False
+            counts["manual"] += 1
+    return counts
 
-# ============ LYH ============
-# LYH11 让球6串1 049-054 ¥30 15倍 (=台账你注2)
-add("LYH", settle("LYH11 让球6串1049-54(跟单)", [
-    [(lambda: x12("瑞士","加拿大",'D'),2.62)],
-    [(lambda: x12("波黑","卡塔尔",'W'),1.26)],
-    [(lambda: x12("苏格兰","巴西",'L'),1.19)],
-    [(lambda: hcap("摩洛哥","海地",-2,'W'),2.15)],
-    [(lambda: x12("南非","韩国",'L'),1.44)],
-    [(lambda: x12("捷克","墨西哥",'W'),3.55)],
-], [6], 15, 30, "=台账你注2,归属冲突"))
-# LYH12 比分4复式 049-054 ¥30  (=ME9png) -> 跳过避免双算, 仅标注
-# LYH6 5串1单式 067-071 ¥10 5倍
-add("LYH", settle("LYH6 5串1单067-71", [
-    [(lambda: x12("克罗地亚","加纳",'L'),4.90)],
-    [(lambda: hcap("巴拿马","英格兰",2,'D'),4.10)],
-    [(lambda: x12("哥伦比亚","葡萄牙",'D'),3.70)],
-    [(lambda: x12("刚果金","乌兹别克",'D'),4.05)],
-    [(lambda: x12("阿尔及利亚","奥地利",'D'),1.94)],
-], [5], 5, 10))
-# LYH7 5串1复式2注 067-071 ¥20 5倍 (071双选)
-add("LYH", settle("LYH7 5串1复式067-71", [
-    [(lambda: x12("克罗地亚","加纳",'W'),1.69)],
-    [(lambda: hcap("巴拿马","英格兰",2,'L'),1.87)],
-    [(lambda: x12("哥伦比亚","葡萄牙",'L'),1.72)],
-    [(lambda: x12("刚果金","乌兹别克",'W'),1.45)],
-    [(lambda: x12("阿尔及利亚","奥地利",'D'),1.94),(lambda: x12("阿尔及利亚","奥地利",'L'),2.80)],
-], [5], 5, 20))
-# LYH8 5串1复式8注 067-071 ¥32 2倍 (069,070,071双选)
-add("LYH", settle("LYH8 5串1复式067-71", [
-    [(lambda: x12("克罗地亚","加纳",'D'),3.00)],
-    [(lambda: hcap("巴拿马","英格兰",2,'D'),4.10)],
-    [(lambda: x12("哥伦比亚","葡萄牙",'D'),3.70),(lambda: x12("哥伦比亚","葡萄牙",'L'),1.72)],
-    [(lambda: x12("刚果金","乌兹别克",'W'),1.45),(lambda: x12("刚果金","乌兹别克",'D'),4.05)],
-    [(lambda: x12("阿尔及利亚","奥地利",'D'),1.94),(lambda: x12("阿尔及利亚","奥地利",'L'),2.80)],
-], [5], 2, 32))
-# LYH14 让球2串1 045-046 ¥20 10倍
-add("LYH", settle("LYH14 让球2串1045-46", [
-    [(lambda: hcap("葡萄牙","乌兹别克",-1,'D'),4.05)],  # 让平线不确定假设-1
-    [(lambda: hcap("英格兰","加纳",-2,'D'),3.70)],
-], [2], 10, 20, "葡让球线不确定"))
 
-# ME8 混合3关复式(5选3) 055-060 ¥100 2倍 (drop 055; 056/058双选; 低置信)
-add("你", settle("ME8 3关复式055-60", [
-    [(lambda: hcap("库拉索","科特迪瓦",2,'W'),2.66),(lambda: hcap("库拉索","科特迪瓦",2,'D'),3.60)],
-    [(lambda: hcap("突尼斯","荷兰",2,'W'),3.89)],
-    [(lambda: hcap("日本","瑞典",-1,'W'),2.95),(lambda: x12("日本","瑞典",'D'),3.50)],
-    [(lambda: x12("巴拉圭","澳大利亚",'D'),2.15)],
-    [(lambda: x12("土耳其","美国",'W'),3.65)],
-], [3], 2, 100, "选项歧义+双选解读,低置信"))
+# ============ recommendations 层: 单腿胜平负 → 'h'/'d'/'a' 或 None(需人工)============
+def rec_sel(leg_text: str, home_cn: str, away_cn: str):
+    """把 recommendation 的 leg 文字判成主队视角胜平负码。
+    让球/含 '-'/'让' 等结构一律返回 None(需走结构化人工路径, 不在此瞎猜)。"""
+    if "-" in leg_text or "让" in leg_text:
+        return None
+    if "主胜" in leg_text:
+        return "h"
+    if "客胜" in leg_text:
+        return "a"
+    if leg_text.strip() == "平" or leg_text.startswith("平"):
+        return "d"
+    if home_cn and home_cn in leg_text and "胜" in leg_text:
+        return "h"
+    if away_cn and away_cn in leg_text and "胜" in leg_text:
+        return "a"
+    return None
 
-# ---- 固定/已知结果票 (非脚本可算: 真实订单/北单/半全场) ----
-add("你", 168.00)   ; print(f"{'ME16 加纳+2.5 单关(真单)':22s} 盈亏  +168.00  注300  ★已结算实赢")
-add("你", 255.78)   ; print(f"{'ME6 北单5场3关(文件名)':22s} 盈亏  +255.78  注100  ★用户标盈利")
-add("你", -132.00)  ; print(f"{'ME7 北单6场4关(用户:没中)':22s} 盈亏  -132.00  注132  用户确认没中")
-add("你", -30.00)   ; print(f"{'你注2 让球6串1(台账)':22s} 盈亏   -30.00  注30   台账2/6全损")
-add("LYH", -30.00)  ; print(f"{'LYH12 比分6串1(跟单)':22s} 盈亏   -30.00  注30   =ME9png 0/6")
-add("LYH", -40.00)  ; print(f"{'LYH 半全场049(台账)':22s} 盈亏   -40.00  注40   平胜·避开全损")
-add("LYH", -50.00)  ; print(f"{'LYH 半全场050(台账)':22s} 盈亏   -50.00  注50   胜胜·避开全损")
 
-print("="*90)
-print("各人已结小计(LYH13-045半场缺/待结 另计):")
-for k in sorted(P, key=lambda x:-P[x]):
-    print(f"  {k:6s}  {P[k]:+10.2f}")
-print(f"  合计    {sum(P.values()):+10.2f}")
+def settle_recommendations(ledger: dict, results: dict, name_to_num: dict) -> dict:
+    """结 recommendations 里 settled:False 的单腿(纯胜平负)。
+    name_to_num: {(home_cn, away_cn): 场次号}(CLI 由 wc.db 构建)。
+    对齐不到场次号 / 未完赛 / 让球等 rec_sel 返回 None 的一律跳过留待结。幂等。"""
+    counts = {"settled": 0, "skipped": 0}
+    for r in ledger.get("recommendations", []):
+        if r.get("settled"):
+            continue
+        home, _, away = (r.get("match", "")).partition("vs")
+        home, away = home.strip(), away.strip()
+        num = name_to_num.get((home, away))
+        if not num or num not in results:
+            counts["skipped"] += 1
+            continue
+        sel = rec_sel(r.get("leg", ""), home, away)
+        if sel is None:
+            counts["skipped"] += 1
+            continue
+        hs, as_ = results[num]
+        r["result"] = "win" if had_hit(hs, as_, sel) else "loss"
+        r["settled"] = True
+        counts["settled"] += 1
+    return counts
+
+
+# ============ CLI 编排 ============
+def _build_name_to_num(wcdb_path: str) -> dict:
+    """从 wc.db matches 建 {(home_cn, away_cn): 场次号尾三位}。库缺失返回 {}。"""
+    out: dict = {}
+    try:
+        c = sqlite3.connect(f"file:{wcdb_path}?mode=ro", uri=True)
+    except sqlite3.OperationalError:
+        return out
+    try:
+        rows = c.execute("SELECT zucai_num, home_cn, away_cn FROM matches").fetchall()
+    except sqlite3.OperationalError:
+        return out
+    finally:
+        c.close()
+    for zn, h, a in rows:
+        m = re.search(r"(\d+)$", zn or "")
+        if m:
+            out[(h, a)] = m.group(1)
+    return out
+
+
+def _settle_struct_batch(ledger: dict, struct_batch: list, results: dict) -> dict:
+    """对结构化 batch 逐张 settle_ticket, 幂等写回。返回 write_back 计数 + 明细。"""
+    by_code = {}
+    detail = []
+    for t in struct_batch:
+        r = settle_ticket(t, results)
+        by_code[t["唯一码"]] = r
+        detail.append((t.get("who", "?"), t.get("type", t["唯一码"]), r))
+    counts = write_back(ledger, by_code)
+    counts["_detail"] = detail
+    return counts
+
+
+def main(argv=None) -> int:
+    import argparse
+    import json
+    import pathlib
+
+    ap = argparse.ArgumentParser(description="WC2026 结算引擎: 结 recommendations 单腿 + 结构化 tickets")
+    ap.add_argument("--ledger", required=True, help="data/bet_ledger.json 路径")
+    ap.add_argument("--struct", help="结构化待结 tickets 的 batch.json(数组); 不给则只结 recommendations")
+    ap.add_argument("--cache", default=".cache/odds_cache.db", help="odds_cache.db(match_results 源)")
+    ap.add_argument("--wcdb", default="data/wc.db", help="wc.db(队名→场次号)")
+    ap.add_argument("--dry-run", action="store_true", help="只报告不写回")
+    a = ap.parse_args(argv)
+
+    ledger = json.loads(pathlib.Path(a.ledger).read_text(encoding="utf-8"))
+    results = load_results(a.cache)
+    name_to_num = _build_name_to_num(a.wcdb)
+
+    print(f"赛果已加载 {len(results)} 场; 队名映射 {len(name_to_num)} 条")
+    rec_counts = settle_recommendations(ledger, results, name_to_num)
+    print(f"recommendations 层: 结 {rec_counts['settled']} 条, 跳过 {rec_counts['skipped']} 条")
+
+    if a.struct:
+        batch = json.loads(pathlib.Path(a.struct).read_text(encoding="utf-8"))
+        tc = _settle_struct_batch(ledger, batch, results)
+        print(f"tickets 层: 已结 {tc['settled']} / 待结 {tc['pending']} / "
+              f"待人工 {tc['manual']} / 跳过(已结) {tc['skipped']}")
+        for who, typ, r in tc["_detail"]:
+            tag = {"已结": "✅", "待结": "⏳", "待人工": "⚠️"}.get(r["status"], "?")
+            extra = f" pnl={r['pnl']:+.2f}" if r["status"] == "已结" else (
+                f" {r['reason']}" if r["reason"] else "")
+            print(f"  {tag} [{who}] {typ}: {r['legs_hit']}{extra}")
+
+    # 已结 tickets 按人盈亏小结
+    by_person: dict = {}
+    for t in ledger.get("tickets", []):
+        if t.get("settled") and isinstance(t.get("pnl"), (int, float)):
+            by_person[t["who"]] = by_person.get(t["who"], 0.0) + t["pnl"]
+    if by_person:
+        print("已结 tickets 累计盈亏(全量):")
+        for k in sorted(by_person, key=lambda x: -by_person[x]):
+            print(f"  {k:6s} {by_person[k]:+10.2f}")
+        print(f"  合计   {sum(by_person.values()):+10.2f}")
+
+    if not a.dry_run:
+        pathlib.Path(a.ledger).write_text(
+            json.dumps(ledger, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print(f"已写回 {a.ledger}")
+    else:
+        print("(dry-run: 未写回)")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

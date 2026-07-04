@@ -1,246 +1,356 @@
 # -*- coding: utf-8 -*-
-"""settle_tickets 结算引擎单测: 让球(hcap)/胜平负(x12)/比分(exact)/双选(leg_eval)/复式派彩(settle)。
+"""结算引擎单测(数据驱动重写版): 命中判定 / 单腿双选 / payout 组合 / 注数·odds_max 校验 /
+部分开赛 / 半全场 / recommendations 层。
 
-按现有实现的**实际行为**断言 —— 不改 settle_tickets.py 本身。
-注意: 该模块在 import 时会跑一大段实盘票据的 settle 并打印(顶层副作用),
-这里只调用其纯函数, 那些打印无害(pytest 会捕获)。
-
-关键认知(见文末报告): 本引擎的"让球"是**竞彩让球胜平负三路模型**(整数盘, 让球后当作
-主胜/平/客胜三选一), 不是亚盘半赢半输 —— 整数盘"走盘"= net 净差为 0 时归为 'D',
-并非退款。所以下面的"走盘"用例断言的是 net0 → 'D' 命中, 而非退本金。
+赛果按 (home_goals, away_goals) 注入(不再用队名硬编码比分库)。
+让球沿用**竞彩整数让球胜平负三路模型**: 让球后 net 净差 >0→'W' / =0→'D'(走盘归平, 非退款) / <0→'L'。
 """
 import pytest
 
 from tools import settle_tickets as s
 
 
-# ============ 比分库 score / exact ============
-def test_score_lookup_exact():
-    """score 按队名(有序对)取比分, 编号无关。"""
-    assert s.score("墨西哥", "南非") == (2, 0)
-    assert s.score("加拿大", "波黑") == (1, 1)
+# ============ 命中原子: outcome / had / hcap / exact / goals ============
+def test_outcome_home_draw_away():
+    assert s.outcome(2, 0) == "h"
+    assert s.outcome(1, 1) == "d"
+    assert s.outcome(0, 1) == "a"
 
 
-def test_score_order_sensitive_raises():
-    """比分库键是有序 (home,away); 主客对调不在库中 → KeyError(不做对称回退)。"""
-    with pytest.raises(KeyError):
-        s.score("南非", "墨西哥")
+def test_had_hit_win_draw_loss():
+    assert s.had_hit(2, 0, "h") is True
+    assert s.had_hit(2, 0, "d") is False
+    assert s.had_hit(1, 1, "d") is True
+    assert s.had_hit(0, 1, "a") is True
+    assert s.had_hit(0, 1, "h") is False
 
 
-def test_score_unknown_raises():
-    with pytest.raises(KeyError):
-        s.score("火星", "月球")
-
-
-def test_exact_hit_and_miss():
-    assert s.exact("墨西哥", "南非", 2, 0) is True
-    assert s.exact("墨西哥", "南非", 1, 0) is False      # 比分不符
-    assert s.exact("墨西哥", "南非", 0, 2) is False      # 主客反了
-
-
-# ============ 胜平负 x12 (= hcap line 0) ============
-def test_x12_home_win():
-    # 墨西哥 2-0 南非 → 主胜
-    assert s.x12("墨西哥", "南非", "W") is True
-    assert s.x12("墨西哥", "南非", "D") is False
-    assert s.x12("墨西哥", "南非", "L") is False
-
-
-def test_x12_draw():
-    # 加拿大 1-1 波黑 → 平
-    assert s.x12("加拿大", "波黑", "D") is True
-    assert s.x12("加拿大", "波黑", "W") is False
-
-
-def test_x12_away_win():
-    # 海地 0-1 苏格兰 → 客胜
-    assert s.x12("海地", "苏格兰", "L") is True
-    assert s.x12("海地", "苏格兰", "W") is False
-
-
-# ============ 让球 hcap 各档 ============
 def test_hcap_full_win():
-    """让胜(全赢): 巴西 3-0 海地, 让 -1 → net=(3-1)-0=2>0 → 'W' 命中。"""
-    assert s.hcap("巴西", "海地", -1, "W") is True
-    assert s.hcap("巴西", "海地", -1, "D") is False
-    assert s.hcap("巴西", "海地", -1, "L") is False
+    # 3-0, 让-1 → net=(3-1)-0=2>0 → W
+    assert s.hcap_hit(3, 0, -1, "W") is True
+    assert s.hcap_hit(3, 0, -1, "D") is False
 
 
-def test_hcap_full_loss():
-    """让负(全输): 苏格兰 0-3 巴西, 让 -1 → net=(0-1)-3=-4<0 → 'L'。"""
-    assert s.hcap("苏格兰", "巴西", -1, "L") is True
-    assert s.hcap("苏格兰", "巴西", -1, "W") is False
+def test_hcap_integer_push_is_draw_not_refund():
+    # 4-2, 让-2 → net=(4-2)-2=0 → D(走盘归平, 非退款)
+    assert s.hcap_hit(4, 2, -2, "D") is True
+    assert s.hcap_hit(4, 2, -2, "W") is False
+    assert s.hcap_hit(4, 2, -2, "L") is False
 
 
-def test_hcap_negative_line_push_is_draw():
-    """整数盘走盘(net=0): 摩洛哥 4-2 海地, 让 -2 → net=(4-2)-2=0 → 'D'(非退款)。"""
-    assert s.hcap("摩洛哥", "海地", -2, "D") is True
-    assert s.hcap("摩洛哥", "海地", -2, "W") is False
-    assert s.hcap("摩洛哥", "海地", -2, "L") is False
+def test_hcap_receive_line():
+    # 1-1, 受让+1 → net=(1+1)-1=1>0 → W
+    assert s.hcap_hit(1, 1, 1, "W") is True
+    # 1-3, 受让+2 → net=(1+2)-3=0 → D
+    assert s.hcap_hit(1, 3, 2, "D") is True
+    assert s.hcap_hit(1, 3, 2, "W") is False
 
 
-def test_hcap_positive_line_receive_win():
-    """受让方(正盘): 卡塔尔 1-1 瑞士, 卡受让 +1 → net=(1+1)-1=1>0 → 'W'。"""
-    assert s.hcap("卡塔尔", "瑞士", 1, "W") is True
-    assert s.hcap("卡塔尔", "瑞士", 1, "D") is False
+def test_exact_hit():
+    assert s.exact_hit(2, 0, 2, 0) is True
+    assert s.exact_hit(2, 0, 0, 2) is False   # 主客反了
+    assert s.exact_hit(2, 0, 1, 0) is False
 
 
-def test_hcap_positive_line_push_is_draw():
-    """正盘走盘: 乌兹别克 1-3 哥伦比亚, 受让 +2 → net=(1+2)-3=0 → 'D'。"""
-    assert s.hcap("乌兹别克", "哥伦比亚", 2, "D") is True
-    assert s.hcap("乌兹别克", "哥伦比亚", 2, "W") is False
-    assert s.hcap("乌兹别克", "哥伦比亚", 2, "L") is False
+def test_goals_hit():
+    assert s.goals_hit(2, 1, 3) is True       # 总3球
+    assert s.goals_hit(0, 0, 0) is True
+    assert s.goals_hit(2, 1, 2) is False
 
 
-def test_hcap_unknown_want_never_matches():
-    """want 不是 W/D/L 之一 → 恒不命中(o 只会是三者之一)。"""
-    assert s.hcap("巴西", "海地", -1, "X") is False
+# ============ 单腿双选 eval_leg ============
+def test_eval_leg_single_hit_returns_odds():
+    hit, odds = s.eval_leg([{"kind": "had", "sel": "h", "odds": 2.5}], 2, 0)
+    assert hit is True and odds == 2.5
 
 
-# ============ 一条腿 leg_eval / 双选 ============
-def test_leg_eval_single_hit():
-    ok, odds = s.leg_eval([(lambda: True, 3.5)])
-    assert ok is True and odds == 3.5
+def test_eval_leg_single_miss():
+    hit, odds = s.eval_leg([{"kind": "had", "sel": "a", "odds": 2.5}], 2, 0)
+    assert hit is False and odds is None
 
 
-def test_leg_eval_single_miss():
-    ok, odds = s.leg_eval([(lambda: False, 3.5)])
-    assert ok is False and odds is None
+def test_eval_leg_double_takes_matching_pick():
+    # 双选: 平/负, 实际客胜 → 取负那条赔率
+    picks = [{"kind": "had", "sel": "d", "odds": 2.7},
+             {"kind": "had", "sel": "a", "odds": 2.24}]
+    hit, odds = s.eval_leg(picks, 0, 1)
+    assert hit is True and odds == 2.24
 
 
-def test_leg_eval_double_returns_first_matching_odds():
-    """双选: 首选不中、次选中 → 取次选赔率。"""
-    ok, odds = s.leg_eval([(lambda: False, 3.0), (lambda: True, 5.0)])
-    assert ok is True and odds == 5.0
+def test_eval_leg_double_prefers_first_when_both_match():
+    # 理论上单场只有一个结果, 但防御性: 两 pick 都真时取第一条
+    picks = [{"kind": "goals", "n": 1, "odds": 3.0},
+             {"kind": "had", "sel": "d", "odds": 5.0}]
+    hit, odds = s.eval_leg(picks, 1, 0)   # 总1球 且 ... 主胜(非平) → 仅首条真
+    assert hit is True and odds == 3.0
 
 
-def test_leg_eval_double_prefers_first_when_both_hit():
-    """两选都中 → 取第一条(短路返回), 不取更高赔那条。"""
-    ok, odds = s.leg_eval([(lambda: True, 3.0), (lambda: True, 5.0)])
-    assert ok is True and odds == 3.0
+def test_eval_leg_mixed_kinds():
+    picks = [{"kind": "exact", "hs": 2, "as_": 1, "odds": 8.0}]
+    assert s.eval_leg(picks, 2, 1) == (True, 8.0)
+    assert s.eval_leg(picks, 1, 1) == (False, None)
 
 
-def test_leg_eval_empty_picks():
-    """空 picks → (False, None)(不抛错)。"""
-    assert s.leg_eval([]) == (False, None)
+# ============ payout: 复式组合 / 单场固定 ============
+def test_combo_payout_2guan_all_win():
+    # unit=2, 2串1全中 → 2*(2.0*3.0)=12
+    lr = [(True, 2.0), (True, 3.0)]
+    assert s.combo_payout(lr, [2], unit=2) == pytest.approx(12.0)
 
 
-# ============ settle 派彩汇总 ============
-def _hit(odds):
-    return [(lambda: True, odds)]
+def test_combo_payout_one_miss_zero():
+    lr = [(True, 2.0), (False, None)]
+    assert s.combo_payout(lr, [2], unit=2) == pytest.approx(0.0)
 
 
-def _miss(odds):
-    return [(lambda: False, odds)]
+def test_combo_payout_fushi_3choose2_all_hit():
+    # 3选2复式全中: unit=2; 2*3+2*5+3*5=31 → 62
+    lr = [(True, 2.0), (True, 3.0), (True, 5.0)]
+    assert s.combo_payout(lr, [2], unit=2) == pytest.approx(62.0)
 
 
-def test_settle_single_all_win_2guan():
-    """2 串 1 全中: payout = unit(=2*mult) * o1*o2。"""
-    legs = [_hit(2.0), _hit(3.0)]
-    pnl = s.settle("t", legs, [2], mult=1, stake=2)
-    # unit=2, payout=2*(2.0*3.0)=12, pnl=12-2=10
-    assert pnl == pytest.approx(10.0)
+def test_combo_payout_fushi_partial_only_valid_combos():
+    # 3腿2中1不中, guan=[2,3]: 仅(0,1)全中→2*3=6; unit=2 → 12
+    lr = [(True, 2.0), (True, 3.0), (False, None)]
+    assert s.combo_payout(lr, [2, 3], unit=2) == pytest.approx(12.0)
 
 
-def test_settle_single_all_win_with_mult():
-    """倍数放大: unit=2*mult。mult=15, stake=30 → payout=30*6=180。"""
-    legs = [_hit(2.0), _hit(3.0)]
-    pnl = s.settle("t", legs, [2], mult=15, stake=30)
-    assert pnl == pytest.approx(150.0)   # 180-30
+def test_combo_payout_guan_gt_M_skipped():
+    lr = [(True, 2.0), (True, 3.0)]
+    assert s.combo_payout(lr, [4], unit=2) == pytest.approx(0.0)
 
 
-def test_settle_串关_one_leg_miss_total_loss():
-    """串关任一腿不中 → 无满足组合 → 派彩 0, 全损。"""
-    legs = [_hit(2.0), _miss(3.0)]
-    pnl = s.settle("t", legs, [2], mult=15, stake=30)
-    assert pnl == pytest.approx(-30.0)
+def test_single_fixed_payout_sums_independent_hits():
+    # 单场固定每腿独立: unit=2; 腿1中@2.5→5, 腿2不中→0, 腿3中@3→6 → 11
+    lr = [(True, 2.5), (False, None), (True, 3.0)]
+    assert s.single_fixed_payout(lr, unit=2) == pytest.approx(11.0)
 
 
-def test_settle_fushi_2guan_from_3_all_hit():
-    """3 选 2 复式(guan=[2]) 全中: 3 个两两组合都派彩。"""
-    legs = [_hit(2.0), _hit(3.0), _hit(5.0)]
-    # unit=2; combos: 2*3 + 2*5 + 3*5 = 6+10+15=31; payout=2*31=62; stake=6 → pnl=56
-    pnl = s.settle("t", legs, [2], mult=1, stake=6)
-    assert pnl == pytest.approx(56.0)
+# ============ 校验器: 注数 / odds_max(真实票反算)============
+def test_count_notes_combo_full_2to8_is_247():
+    legs = [[{"odds": 1.0}]] * 8    # 8腿各单选
+    assert s.count_notes(legs, list(range(2, 9)), "combo") == 247
 
 
-def test_settle_fushi_partial_hit_only_valid_combos_pay():
-    """复式部分命中: 仅"全中腿"构成的组合派彩。3 腿中 2 中 1 不中, guan=[2,3]。"""
-    legs = [_hit(2.0), _hit(3.0), _miss(5.0)]
-    # k=2: (0,1)全中→2*3=6; (0,2)(1,2)含不中→跳过。k=3: 含不中→跳过。
-    # payout=unit*6=2*6=12; stake=6 → pnl=6
-    pnl = s.settle("t", legs, [2, 3], mult=1, stake=6)
-    assert pnl == pytest.approx(6.0)
+def test_count_notes_combo_with_double_selection():
+    # 总进球3场2-3关: 086单选, 087双选, 088单选 → 真实票"7注"
+    legs = [[{"odds": 2.75}], [{"odds": 4.0}, {"odds": 3.0}], [{"odds": 2.8}]]
+    assert s.count_notes(legs, [2, 3], "combo") == 7
 
 
-def test_settle_guan_level_gt_M_skipped():
-    """关数 k > 腿数 M → continue 跳过, 不派彩。"""
-    legs = [_hit(2.0), _hit(3.0)]
-    pnl = s.settle("t", legs, [4], mult=1, stake=2)   # 只有2腿却要4串
-    assert pnl == pytest.approx(-2.0)
+def test_count_notes_single_fixed_sums_selections():
+    # 单场固定: 086三档 + 088两档 → 5注
+    legs = [[{"odds": 6.5}, {"odds": 3.7}, {"odds": 2.75}], [{"odds": 2.8}, {"odds": 3.1}]]
+    assert s.count_notes(legs, [], "single_fixed") == 5
 
 
-def test_settle_empty_guan_levels():
-    """关数列表为空 → 不进循环, 派彩恒 0(无论命中)。"""
-    legs = [_hit(2.0), _hit(3.0)]
-    pnl = s.settle("t", legs, [], mult=1, stake=2)
-    assert pnl == pytest.approx(-2.0)
+def test_max_payout_combo_matches_ticket_face():
+    # LYZ 总进球2串1复式×5倍 unit=10 → 票面 201.5
+    legs = [[{"odds": 6.5}, {"odds": 3.7}, {"odds": 2.75}], [{"odds": 2.8}, {"odds": 3.1}]]
+    assert s.max_payout(legs, [2], "combo", unit=10) == pytest.approx(201.5)
 
 
-def test_settle_mult_zero_yields_zero_payout():
-    """mult=0 → unit=0 → 即便全中派彩也是 0。"""
-    legs = [_hit(2.0), _hit(3.0)]
-    pnl = s.settle("t", legs, [2], mult=0, stake=2)
-    assert pnl == pytest.approx(-2.0)
+def test_max_payout_single_fixed_matches_ticket_face():
+    # LYZ 单场固定×7倍 unit=14 → 票面 134.4
+    legs = [[{"odds": 6.5}, {"odds": 3.7}, {"odds": 2.75}], [{"odds": 2.8}, {"odds": 3.1}]]
+    assert s.max_payout(legs, [], "single_fixed", unit=14) == pytest.approx(134.4)
 
 
-def test_settle_double_leg_uses_matched_odds_in_product():
-    """双选腿命中时, 组合乘积用"命中那条"的赔率(此处次选 5.0)。"""
-    legs = [
-        _hit(2.0),
-        [(lambda: False, 3.0), (lambda: True, 5.0)],   # 双选, 取 5.0
-    ]
-    # unit=2; payout=2*(2.0*5.0)=20; stake=2 → pnl=18
-    pnl = s.settle("t", legs, [2], mult=1, stake=2)
-    assert pnl == pytest.approx(18.0)
+# ============ settle_ticket: 编排(校验/部分开赛/半全场/算账)============
+def _leg(mk, *picks):
+    return {"match_key": mk, "picks": list(picks)}
 
 
-def test_settle_single_relay_1guan():
-    """单关(guan=[1]) 命中: payout=unit*odds。"""
-    legs = [_hit(2.5)]
-    pnl = s.settle("t", legs, [1], mult=1, stake=2)   # 2*2.5=5, pnl=3
-    assert pnl == pytest.approx(3.0)
+def _t(**kw):
+    """构造结构化票, 带合理默认。"""
+    base = {"唯一码": "X", "who": "T", "stake": 2, "mult": 1,
+            "mode": "combo", "guan_levels": [2], "legs": [], "expect_notes": 0,
+            "odds_max": 0.0}
+    base.update(kw)
+    return base
 
 
-# ============ 边界 / 容错(断言"现有实现的实际行为") ============
-def test_settle_sub_one_odds_can_lose_despite_hit():
-    """奇葩赔率<1 时, 即便命中, 派彩也可能低于投注 → 账面亏(无任何保护)。"""
-    legs = [_hit(0.5)]
-    pnl = s.settle("t", legs, [1], mult=1, stake=2)   # 2*0.5=1, pnl=-1
-    assert pnl == pytest.approx(-1.0)
+def test_settle_ticket_combo_all_win():
+    t = _t(stake=4, mult=1, guan_levels=[2], expect_notes=1, odds_max=12.0,
+           legs=[_leg("086", {"kind": "had", "sel": "h", "odds": 2.0}),
+                 _leg("088", {"kind": "had", "sel": "h", "odds": 3.0})])
+    r = s.settle_ticket(t, {"086": (2, 0), "088": (1, 0)})
+    assert r["status"] == "已结"
+    assert r["pnl"] == pytest.approx(12.0 - 4)   # unit2 * 2*3 =12
+    assert "086" in r["legs_hit"]
 
 
-def test_settle_missing_score_propagates_keyerror():
-    """腿引用了比分库缺失的场次 → KeyError 直接抛出(settle 不吞异常, 无容错)。"""
-    legs = [[(lambda: s.exact("火星", "月球", 1, 0), 2.0)]]
-    with pytest.raises(KeyError):
-        s.settle("t", legs, [1], mult=1, stake=2)
+def test_settle_ticket_串关_one_miss_total_loss():
+    t = _t(stake=4, mult=1, guan_levels=[2], expect_notes=1, odds_max=12.0,
+           legs=[_leg("086", {"kind": "had", "sel": "h", "odds": 2.0}),
+                 _leg("088", {"kind": "had", "sel": "h", "odds": 3.0})])
+    r = s.settle_ticket(t, {"086": (2, 0), "088": (0, 1)})   # 088 客胜, 不中
+    assert r["status"] == "已结"
+    assert r["pnl"] == pytest.approx(-4.0)
 
 
-def test_settle_returns_pnl_not_payout():
-    """settle 返回的是盈亏(payout-stake), 不是派彩本身。"""
-    legs = [_hit(3.0)]
-    pnl = s.settle("t", legs, [1], mult=1, stake=2)   # payout=6, 返回 6-2=4
-    assert pnl == pytest.approx(4.0)
+def test_settle_ticket_partial_unfinished_stays_pending():
+    t = _t(stake=4, mult=1, guan_levels=[2], expect_notes=1, odds_max=12.0,
+           legs=[_leg("086", {"kind": "had", "sel": "h", "odds": 2.0}),
+                 _leg("088", {"kind": "had", "sel": "h", "odds": 3.0})])
+    r = s.settle_ticket(t, {"086": (2, 0)})   # 088 未开赛(不在 results)
+    assert r["status"] == "待结"
+    assert r["pnl"] is None
+    assert "086" in r["legs_hit"] and "088" in r["legs_hit"]
 
 
-def test_add_accumulates_person_pnl():
-    """add 累加到全局 P(测完隔离恢复), 验证累加语义。"""
-    key = "__unittest_person__"
-    s.P.pop(key, None)
-    try:
-        s.add(key, 10.0)
-        s.add(key, -3.5)
-        assert s.P[key] == pytest.approx(6.5)
-    finally:
-        s.P.pop(key, None)
+def test_settle_ticket_notes_mismatch_flags_manual():
+    # expect_notes 故意写错 → 校验不过, 标待人工, 不给 pnl
+    t = _t(stake=4, mult=1, guan_levels=[2], expect_notes=99, odds_max=12.0,
+           legs=[_leg("086", {"kind": "had", "sel": "h", "odds": 2.0}),
+                 _leg("088", {"kind": "had", "sel": "h", "odds": 3.0})])
+    r = s.settle_ticket(t, {"086": (2, 0), "088": (1, 0)})
+    assert r["status"] == "待人工"
+    assert r["pnl"] is None
+    assert "注数" in r["reason"]
+
+
+def test_settle_ticket_oddsmax_mismatch_flags_manual():
+    t = _t(stake=4, mult=1, guan_levels=[2], expect_notes=1, odds_max=999.0,
+           legs=[_leg("086", {"kind": "had", "sel": "h", "odds": 2.0}),
+                 _leg("088", {"kind": "had", "sel": "h", "odds": 3.0})])
+    r = s.settle_ticket(t, {"086": (2, 0), "088": (1, 0)})
+    assert r["status"] == "待人工"
+    assert "odds_max" in r["reason"] or "最高" in r["reason"]
+
+
+def test_settle_ticket_htft_flags_manual():
+    t = _t(stake=100, mult=25, mode="single_fixed", guan_levels=[],
+           expect_notes=2, odds_max=202.5,
+           legs=[_leg("087", {"kind": "htft", "sel": "胜胜", "odds": 1.32},
+                             {"kind": "htft", "sel": "平胜", "odds": 4.05})])
+    r = s.settle_ticket(t, {"087": (3, 1)})
+    assert r["status"] == "待人工"
+    assert "半全场" in r["reason"]
+
+
+def test_settle_ticket_single_fixed_independent():
+    # 单场固定2场: 086三档总进球 + 088两档; 只 088 命中
+    t = _t(stake=70, mult=7, mode="single_fixed", guan_levels=[], expect_notes=5,
+           odds_max=134.4,
+           legs=[_leg("086", {"kind": "goals", "n": 0, "odds": 6.5},
+                             {"kind": "goals", "n": 1, "odds": 3.7},
+                             {"kind": "goals", "n": 2, "odds": 2.75}),
+                 _leg("088", {"kind": "goals", "n": 2, "odds": 2.8},
+                             {"kind": "goals", "n": 3, "odds": 3.1})])
+    # 086 实 3球(不在086档) 不中; 088 实 2球 → 中@2.8, unit=14 → 39.2
+    r = s.settle_ticket(t, {"086": (2, 1), "088": (1, 1)})
+    assert r["status"] == "已结"
+    assert r["pnl"] == pytest.approx(14 * 2.8 - 70)
+
+
+# ============ 赛果加载 load_results(临时 sqlite)============
+def _mk_cache(tmp_path):
+    import sqlite3
+    p = tmp_path / "odds_cache.db"
+    c = sqlite3.connect(p)
+    c.execute("CREATE TABLE match_results (match_key TEXT PRIMARY KEY, home_goals INTEGER, "
+              "away_goals INTEGER, outcome TEXT, ts TEXT)")
+    c.executemany("INSERT INTO match_results VALUES (?,?,?,?,?)",
+                  [("周四085", 2, 0, "h", "t"), ("周六203", 0, 2, "a", "t")])
+    c.commit(); c.close()
+    return str(p)
+
+
+def test_load_results_keys_by_3digit_suffix(tmp_path):
+    r = s.load_results(_mk_cache(tmp_path))
+    assert r["085"] == (2, 0)
+    assert r["203"] == (0, 2)
+
+
+def test_load_results_missing_table_or_db_returns_empty(tmp_path):
+    assert s.load_results(str(tmp_path / "nope.db")) == {}
+
+
+# ============ 幂等写回 write_back ============
+def _ledger_with(*tickets):
+    return {"updated": "x", "recommendations": [], "tickets": list(tickets), "people": []}
+
+
+def test_write_back_settles_finished_ticket():
+    led = _ledger_with({"唯一码": "A", "settled": False, "pnl": None, "legs_hit": "待结"})
+    res = {"A": {"status": "已结", "pnl": 8.0, "legs_hit": "命中2/2 086✅ 088✅", "reason": ""}}
+    n = s.write_back(led, res)
+    t = led["tickets"][0]
+    assert t["settled"] is True and t["pnl"] == 8.0 and "命中" in t["legs_hit"]
+    assert n["settled"] == 1
+
+
+def test_write_back_partial_updates_progress_keeps_pending():
+    led = _ledger_with({"唯一码": "A", "settled": False, "pnl": None, "legs_hit": "待结"})
+    res = {"A": {"status": "待结", "pnl": None, "legs_hit": "086✅ 088待结 (部分待结)", "reason": ""}}
+    s.write_back(led, res)
+    t = led["tickets"][0]
+    assert t["settled"] is False and t["pnl"] is None and "待结" in t["legs_hit"]
+
+
+def test_write_back_idempotent_skips_already_settled():
+    led = _ledger_with({"唯一码": "A", "settled": True, "pnl": 5.0, "legs_hit": "命中1/1"})
+    res = {"A": {"status": "已结", "pnl": 999.0, "legs_hit": "changed", "reason": ""}}
+    n = s.write_back(led, res)
+    assert led["tickets"][0]["pnl"] == 5.0   # 不覆盖已结
+    assert n["skipped"] == 1
+
+
+def test_write_back_manual_flag_records_reason_keeps_pending():
+    led = _ledger_with({"唯一码": "A", "settled": False, "pnl": None, "legs_hit": "待结"})
+    res = {"A": {"status": "待人工", "pnl": None, "legs_hit": "待人工", "reason": "半全场无源"}}
+    s.write_back(led, res)
+    assert led["tickets"][0]["settled"] is False
+
+
+# ============ recommendations 层: 单腿胜平负判定 ============
+def test_rec_sel_pure_had():
+    assert s.rec_sel("主胜(南非)", "南非", "韩国") == "h"
+    assert s.rec_sel("客胜(卡塔尔)", "波黑", "卡塔尔") == "a"
+    assert s.rec_sel("平", "日本", "瑞典") == "d"
+
+
+def test_rec_sel_team_name_resolves_side():
+    assert s.rec_sel("哥伦比亚胜", "哥伦比亚", "葡萄牙") == "h"
+    assert s.rec_sel("阿尔及利亚胜", "奥地利", "阿尔及利亚") == "a"
+
+
+def test_rec_sel_handicap_returns_none():
+    assert s.rec_sel("主-1负(平或日本)", "巴西", "日本") is None
+
+
+# ============ recommendations 层编排 settle_recommendations ============
+def test_settle_recommendations_marks_win_loss():
+    led = {"recommendations": [
+        {"date": "d", "match": "南非vs韩国", "leg": "主胜(南非)", "settled": False},
+        {"date": "d", "match": "日本vs瑞典", "leg": "平", "settled": False},
+    ], "tickets": []}
+    results = {"059": (1, 0), "062": (1, 1)}          # 南非1-0胜, 日本1-1平
+    name_to_num = {("南非", "韩国"): "059", ("日本", "瑞典"): "062"}
+    n = s.settle_recommendations(led, results, name_to_num)
+    assert led["recommendations"][0]["result"] == "win" and led["recommendations"][0]["settled"] is True
+    assert led["recommendations"][1]["result"] == "win" and led["recommendations"][1]["settled"] is True
+    assert n["settled"] == 2
+
+
+def test_settle_recommendations_loss_and_unknown_and_handicap():
+    led = {"recommendations": [
+        {"match": "波黑vs卡塔尔", "leg": "客胜(卡塔尔)", "settled": False},   # 实主胜→loss
+        {"match": "巴西vs日本", "leg": "主-1负(平或日本)", "settled": False},   # 让球→跳过
+        {"match": "未知vs对阵", "leg": "平", "settled": False},               # 无场次号→跳过
+    ], "tickets": []}
+    results = {"050": (3, 1)}
+    name_to_num = {("波黑", "卡塔尔"): "050", ("巴西", "日本"): "051"}
+    n = s.settle_recommendations(led, results, name_to_num)
+    assert led["recommendations"][0]["result"] == "loss" and led["recommendations"][0]["settled"] is True
+    assert led["recommendations"][1]["settled"] is False   # 让球跳过
+    assert led["recommendations"][2]["settled"] is False   # 无号跳过
+    assert n["settled"] == 1 and n["skipped"] == 2
+
+
+def test_settle_recommendations_idempotent():
+    led = {"recommendations": [{"match": "南非vs韩国", "leg": "主胜(南非)",
+                                "result": "win", "settled": True}], "tickets": []}
+    n = s.settle_recommendations(led, {"059": (1, 0)}, {("南非", "韩国"): "059"})
+    assert n["settled"] == 0
