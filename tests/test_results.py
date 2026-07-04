@@ -307,3 +307,23 @@ def test_fetch_results_goes_through_retry(monkeypatch):
     monkeypatch.setattr(R.time, "sleep", lambda s: None)
     rows = R.fetch_results()
     assert len(rows) == 1 and rows[0].zucai_num == "周四055" and rows[0].finished
+
+
+# ============ 半场比分 sectionsNo1 (半全场结算源) ============
+def test_parse_results_extracts_half_time_from_sectionsNo1():
+    """sectionsNo1 = 上半场 "主:客"; sectionsNo999 = 全场。解析出 ht_home/ht_away。"""
+    data = {"value": {"matchResult": [
+        {"matchNumStr": "周五087", "matchResultStatus": "2",
+         "sectionsNo1": "1:0", "sectionsNo999": "1:1"},
+    ]}}
+    r = parse_results(data)[0]
+    assert (r.home_goals, r.away_goals) == (1, 1)      # FT
+    assert (r.ht_home, r.ht_away) == (1, 0)            # HT
+
+
+def test_parse_results_ht_none_when_sectionsNo1_missing():
+    data = {"value": {"matchResult": [
+        {"matchNumStr": "周五088", "matchResultStatus": "2", "sectionsNo999": "1:0"},
+    ]}}
+    r = parse_results(data)[0]
+    assert r.ht_home is None and r.ht_away is None

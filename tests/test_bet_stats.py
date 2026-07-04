@@ -201,7 +201,7 @@ def test_ledger_record_schema():
     tix_required = {"date", "who", "type", "stake", "legs_hit", "pnl", "settled"}
     # 0630 起实购票可带可选元数据(serial/picks/odds_max/settles/note)便于赛后精确回填;
     # 后端只读必填键, 可选键无害。守卫: 必填齐 + 不出现未知键。
-    tix_optional = {"serial", "picks", "odds_max", "settles", "note"}
+    tix_optional = {"serial", "picks", "odds_max", "settles", "note", "唯一码"}
     people = set(led["people"])
     for t in led["tickets"]:
         keys = set(t.keys())
