@@ -354,3 +354,14 @@ def test_settle_recommendations_idempotent():
                                 "result": "win", "settled": True}], "tickets": []}
     n = s.settle_recommendations(led, {"059": (1, 0)}, {("南非", "韩国"): "059"})
     assert n["settled"] == 0
+
+
+# ============ odds_max 缺失(None)容忍 ============
+def test_settle_ticket_none_oddsmax_skips_that_check():
+    # 部分 ledger 票 odds_max 为 None → 跳过 odds_max 校验(仍做注数校验), 正常结算
+    t = _t(stake=24, mult=12, mode="single_fixed", guan_levels=[], expect_notes=1,
+           odds_max=None,
+           legs=[_leg("087", {"kind": "exact", "hs": 0, "as_": 1, "odds": 45.0})])
+    r = s.settle_ticket(t, {"087": (1, 1)})
+    assert r["status"] == "已结"
+    assert r["pnl"] == pytest.approx(-24.0)   # 0:1 未中, unit=24

@@ -154,11 +154,12 @@ def settle_ticket(ticket: dict, results: dict) -> dict:
     if n != ticket["expect_notes"]:
         return _fail(f"注数校验不过: 结构反算 {n} 注 ≠ 票面 {ticket['expect_notes']} 注")
 
-    # 3) odds_max 校验
-    mp = max_payout(leg_picks, guan, mode, unit)
-    omax = ticket["odds_max"]
-    if not math.isclose(mp, omax, rel_tol=_OMAX_REL_TOL, abs_tol=_OMAX_ABS_TOL):
-        return _fail(f"odds_max 校验不过: 结构反算最高派彩 {mp:.2f} ≠ 票面 {omax:.2f}")
+    # 3) odds_max 校验(票面 odds_max 缺失/None 时跳过此校验, 仍靠注数校验兜底)
+    omax = ticket.get("odds_max")
+    if omax is not None:
+        mp = max_payout(leg_picks, guan, mode, unit)
+        if not math.isclose(mp, omax, rel_tol=_OMAX_REL_TOL, abs_tol=_OMAX_ABS_TOL):
+            return _fail(f"odds_max 校验不过: 结构反算最高派彩 {mp:.2f} ≠ 票面 {omax:.2f}")
 
     # 4) 部分开赛: 任一腿的场次不在 results → 保持待结, 只回填进度串
     unfinished = [leg["match_key"] for leg in legs if leg["match_key"] not in results]
