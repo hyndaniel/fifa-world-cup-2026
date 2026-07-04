@@ -43,6 +43,8 @@ class MatchResult:
     home_goals: int
     away_goals: int
     finished: bool
+    ht_home: int | None = None   # 上半场比分(sectionsNo1); 缺失为 None。半全场结算用。
+    ht_away: int | None = None
 
 
 def _parse_score(sections: object) -> tuple[int, int] | None:
@@ -75,7 +77,9 @@ def parse_results(data: dict) -> list[MatchResult]:
         score = _parse_score(m.get("sectionsNo999"))
         finished = m.get("matchResultStatus") == FINISHED_STATUS and score is not None
         home, away = score if score is not None else (0, 0)
-        out.append(MatchResult(num, home, away, finished))
+        ht = _parse_score(m.get("sectionsNo1"))
+        ht_home, ht_away = ht if ht is not None else (None, None)
+        out.append(MatchResult(num, home, away, finished, ht_home, ht_away))
     return out
 
 

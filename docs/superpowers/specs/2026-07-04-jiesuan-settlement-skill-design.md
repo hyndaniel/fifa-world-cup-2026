@@ -25,7 +25,9 @@
 - **终场比分**:`.cache/odds_cache.db` 的 `match_results` 表(`match_key, home_goals, away_goals, outcome, ts`),
   由 `tools/backfill_results.py --once`(launchd 每 5 分钟无害重跑)自动抓 upsert。`match_key` 形如 `周四085`,
   **尾三位数**对齐 ledger picks 里的 `086`。**只有完赛(finished)的场次才在表里。**
-- **半场比分**:全库无任何来源 → **半全场玩法无法自动结算**,一律标待人工。
+- **半场比分**:竞彩开奖接口(与 FT 同一个 `getUniformMatchResultV1.qry`)的 `sectionsNo1` 字段即上半场
+  比分(`sectionsNo999` 是全场)。引擎在遇到半全场票时**按需实时取一次**半场比分自动结算;某场半场暂取不到才待人工。
+  *(2026-07-04 补:原设计以为无半场源、半全场一律待人工;实测同接口已带 `sectionsNo1`,遂改为自动结。)*
 
 ## 3. 决策(已与用户敲定)
 
@@ -82,7 +84,8 @@
 - `hcap`(让球胜平负):`{line, sel}`,`(hs+line) - as_` 的符号 → W/D/L,对 `sel`。`line` 主队让 N=`-N`、受让 N=`+N`。
 - `exact`(比分):`{hs, as_}`,对终比分。
 - `goals`(总进球):`{n}`,对 `hs+as_`。
-- `htft`(半全场):**无半场数据 → 该票整体标待人工**。
+- `htft`(半全场):`sel` 两字(首=半场、次=全场,各 胜/平/负)。引擎按需取 `sectionsNo1` 半场比分结算;
+  半场取不到才待人工。
 
 **payout 算法(`unit = 2 × mult`):**
 - `combo`:`Σ_{k∈guan_levels} Σ_{C(M,k) 组合} [组合内每腿都命中] · unit · ∏赔率`(命中赔率取该腿命中的那个 pick 的 odds)。

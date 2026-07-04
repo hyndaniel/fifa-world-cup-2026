@@ -365,3 +365,50 @@ def test_settle_ticket_none_oddsmax_skips_that_check():
     r = s.settle_ticket(t, {"087": (1, 1)})
     assert r["status"] == "已结"
     assert r["pnl"] == pytest.approx(-24.0)   # 0:1 未中, unit=24
+
+
+# ============ 半全场(HT+FT)结算: htft_hit / eval_leg 带半场 / settle_ticket ============
+def test_htft_hit_ht_and_ft():
+    # HT 主胜, FT 平: '胜平' 中; '胜胜' 不中(FT非胜); '平胜' 不中(HT非平)
+    assert s.htft_hit(1, 0, 1, 1, "胜平") is True
+    assert s.htft_hit(1, 0, 1, 1, "胜胜") is False
+    assert s.htft_hit(1, 0, 1, 1, "平胜") is False
+
+
+def test_htft_hit_all_nine_faces():
+    # HT 0:1(客胜/负), FT 2:1(主胜) → '负胜'
+    assert s.htft_hit(0, 1, 2, 1, "负胜") is True
+    assert s.htft_hit(0, 1, 2, 1, "负负") is False
+
+
+def test_eval_leg_htft_uses_ht():
+    picks = [{"kind": "htft", "sel": "胜胜", "odds": 1.32},
+             {"kind": "htft", "sel": "平胜", "odds": 4.05}]
+    # HT 1:0(胜) FT 1:1(平) → 两个都要 FT=胜, 全不中
+    hit, odds = s.eval_leg(picks, 1, 1, ht=(1, 0))
+    assert hit is False and odds is None
+    # HT 1:0(胜) FT 2:1(胜) → '胜胜' 中
+    hit, odds = s.eval_leg(picks, 2, 1, ht=(1, 0))
+    assert hit is True and odds == 1.32
+
+
+def test_settle_ticket_htft_settles_with_ht():
+    t = _t(stake=100, mult=25, mode="single_fixed", guan_levels=[], expect_notes=2,
+           odds_max=202.5,
+           legs=[_leg("087", {"kind": "htft", "sel": "胜胜", "odds": 1.32},
+                             {"kind": "htft", "sel": "平胜", "odds": 4.05})])
+    # FT 1:1, HT 1:0 → 全不中 → 全损
+    r = s.settle_ticket(t, {"087": (1, 1)}, ht_results={"087": (1, 0)})
+    assert r["status"] == "已结"
+    assert r["pnl"] == pytest.approx(-100.0)
+
+
+def test_settle_ticket_htft_pending_when_ht_missing():
+    t = _t(stake=100, mult=25, mode="single_fixed", guan_levels=[], expect_notes=2,
+           odds_max=202.5,
+           legs=[_leg("087", {"kind": "htft", "sel": "胜胜", "odds": 1.32},
+                             {"kind": "htft", "sel": "平胜", "odds": 4.05})])
+    # 有 FT 无 HT → 待人工(半场未获取), 不猜
+    r = s.settle_ticket(t, {"087": (1, 1)}, ht_results={})
+    assert r["status"] == "待人工"
+    assert "半场" in r["reason"]

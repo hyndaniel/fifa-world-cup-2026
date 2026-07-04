@@ -45,8 +45,17 @@ def goals_hit(hs: int, as_: int, n: int) -> bool:
     return (hs + as_) == n
 
 
+_HTFT_FACE = {"胜": "h", "平": "d", "负": "a"}
+
+
+def htft_hit(ht_hs: int, ht_as: int, ft_hs: int, ft_as: int, sel: str) -> bool:
+    """半全场胜平负: sel 两字, 首=半场结果、次=全场结果, 各 ∈ {胜,平,负}(主队视角)。"""
+    ht = _HTFT_FACE.get(sel[0]); ft = _HTFT_FACE.get(sel[1])
+    return outcome(ht_hs, ht_as) == ht and outcome(ft_hs, ft_as) == ft
+
+
 # ============ 单腿双选 ============
-def _pick_hit(pick: dict, hs: int, as_: int) -> bool:
+def _pick_hit(pick: dict, hs: int, as_: int, ht=None) -> bool:
     k = pick["kind"]
     if k == "had":
         return had_hit(hs, as_, pick["sel"])
@@ -56,14 +65,19 @@ def _pick_hit(pick: dict, hs: int, as_: int) -> bool:
         return exact_hit(hs, as_, pick["hs"], pick["as_"])
     if k == "goals":
         return goals_hit(hs, as_, pick["n"])
+    if k == "htft":
+        if ht is None:
+            raise ValueError("htft 命中判定需半场比分 ht=(ht_hs, ht_as)")
+        return htft_hit(ht[0], ht[1], hs, as_, pick["sel"])
     raise ValueError(f"未知 pick.kind: {k!r}")
 
 
-def eval_leg(picks: list[dict], hs: int, as_: int):
+def eval_leg(picks: list[dict], hs: int, as_: int, ht=None):
     """一条腿(可含多个双选 pick): 返回 (是否命中, 命中赔率)。
-    命中 = 任一 pick 真; 多 pick 都真时取第一条(单场只有一个结果, 防御性短路)。"""
+    命中 = 任一 pick 真; 多 pick 都真时取第一条(单场只有一个结果, 防御性短路)。
+    ht=(ht_hs, ht_as) 半场比分, 仅 htft pick 需要。"""
     for p in picks:
-        if _pick_hit(p, hs, as_):
+        if _pick_hit(p, hs, as_, ht):
             return True, p["odds"]
     return False, None
 
@@ -127,13 +141,15 @@ _OMAX_REL_TOL = 2e-3
 _OMAX_ABS_TOL = 0.6
 
 
-def settle_ticket(ticket: dict, results: dict) -> dict:
+def settle_ticket(ticket: dict, results: dict, ht_results: dict | None = None) -> dict:
     """给一张结构化票 + 赛果字典(场次号 → (home_goals, away_goals), 只含完赛场次),
     返回 {status, legs_hit, pnl, payout, reason}。
 
-    status: '已结' / '待结'(有腿未开赛) / '待人工'(半全场 / 注数或 odds_max 校验不过)。
+    半全场(htft)腿另需 ht_results(场次号 → 半场 (ht_hs, ht_as)); 缺半场则该票待人工。
+    status: '已结' / '待结'(有腿未开赛) / '待人工'(半场缺失 / 注数或 odds_max 校验不过)。
     只有 '已结' 才给 pnl(其余 None)。不写库(写回见 write_back)。
     """
+    ht_results = ht_results or {}
     legs = ticket["legs"]
     mode = ticket.get("mode", "combo")
     guan = ticket.get("guan_levels", [])
@@ -145,40 +161,42 @@ def settle_ticket(ticket: dict, results: dict) -> dict:
         return {"status": "待人工", "legs_hit": "待人工", "pnl": None,
                 "payout": None, "reason": reason}
 
-    # 1) 半全场: 全库无半场比分, 无法自动结算
-    if any(p["kind"] == "htft" for leg in legs for p in leg["picks"]):
-        return _fail("半全场玩法无半场比分数据源, 需人工结算")
-
-    # 2) 注数校验
+    # 1) 注数校验
     n = count_notes(leg_picks, guan, mode)
     if n != ticket["expect_notes"]:
         return _fail(f"注数校验不过: 结构反算 {n} 注 ≠ 票面 {ticket['expect_notes']} 注")
 
-    # 3) odds_max 校验(票面 odds_max 缺失/None 时跳过此校验, 仍靠注数校验兜底)
+    # 2) odds_max 校验(票面 odds_max 缺失/None 时跳过此校验, 仍靠注数校验兜底)
     omax = ticket.get("odds_max")
     if omax is not None:
         mp = max_payout(leg_picks, guan, mode, unit)
         if not math.isclose(mp, omax, rel_tol=_OMAX_REL_TOL, abs_tol=_OMAX_ABS_TOL):
             return _fail(f"odds_max 校验不过: 结构反算最高派彩 {mp:.2f} ≠ 票面 {omax:.2f}")
 
-    # 4) 部分开赛: 任一腿的场次不在 results → 保持待结, 只回填进度串
+    # 3) 部分开赛: 任一腿的场次不在 results → 保持待结, 只回填进度串
     unfinished = [leg["match_key"] for leg in legs if leg["match_key"] not in results]
     if unfinished:
         toks = []
-        hit_n = 0
         for leg in legs:
             mk = leg["match_key"]
             if mk in results:
-                hit, _ = eval_leg(leg["picks"], *results[mk])
+                hit, _ = eval_leg(leg["picks"], *results[mk], ht=ht_results.get(mk))
                 toks.append(f"{mk}{'✅' if hit else '❌'}")
-                hit_n += 1 if hit else 0
             else:
                 toks.append(f"{mk}待结")
         return {"status": "待结", "legs_hit": " ".join(toks) + " (部分待结)",
                 "pnl": None, "payout": None, "reason": ""}
 
+    # 4) 半全场腿的半场比分是否到位(FT 已全开但半场缺 → 待人工, 不猜)
+    ht_missing = [leg["match_key"] for leg in legs
+                  if any(p["kind"] == "htft" for p in leg["picks"])
+                  and leg["match_key"] not in ht_results]
+    if ht_missing:
+        return _fail(f"半场比分未获取: {','.join(ht_missing)}(半全场需上半场比分)")
+
     # 5) 全部完赛 → 算账
-    leg_results = [eval_leg(leg["picks"], *results[leg["match_key"]]) for leg in legs]
+    leg_results = [eval_leg(leg["picks"], *results[leg["match_key"]],
+                            ht=ht_results.get(leg["match_key"])) for leg in legs]
     if mode == "single_fixed":
         payout = single_fixed_payout(leg_results, unit)
     else:
@@ -210,6 +228,29 @@ def load_results(cache_db_path: str) -> dict:
         m = re.search(r"(\d+)$", mk or "")
         if m and hg is not None and ag is not None:
             out[m.group(1)] = (int(hg), int(ag))
+    return out
+
+
+# ============ 半场比分加载(竞彩 sectionsNo1, 半全场结算用)============
+def load_ht_results(cfg: dict | None = None) -> dict:
+    """从竞彩开奖接口(与 FT 同一接口)取**上半场**比分 → {场次号: (ht_hs, ht_as)}。
+    仅含完赛且有半场数据的场次。抓取失败/无 backend → {}(半全场票会因此判待人工, 不猜)。"""
+    import pathlib
+    import sys
+    repo = pathlib.Path(__file__).resolve().parents[1]
+    if str(repo) not in sys.path:
+        sys.path.insert(0, str(repo))
+    try:
+        from backend.results import fetch_results
+        rows = fetch_results(cfg)
+    except Exception:
+        return {}
+    out: dict = {}
+    for r in rows:
+        if r.finished and r.ht_home is not None:
+            m = re.search(r"(\d+)$", r.zucai_num or "")
+            if m:
+                out[m.group(1)] = (r.ht_home, r.ht_away)
     return out
 
 
@@ -308,12 +349,13 @@ def _build_name_to_num(wcdb_path: str) -> dict:
     return out
 
 
-def _settle_struct_batch(ledger: dict, struct_batch: list, results: dict) -> dict:
+def _settle_struct_batch(ledger: dict, struct_batch: list, results: dict,
+                         ht_results: dict | None = None) -> dict:
     """对结构化 batch 逐张 settle_ticket, 幂等写回。返回 write_back 计数 + 明细。"""
     by_code = {}
     detail = []
     for t in struct_batch:
-        r = settle_ticket(t, results)
+        r = settle_ticket(t, results, ht_results)
         by_code[t["唯一码"]] = r
         detail.append((t.get("who", "?"), t.get("type", t["唯一码"]), r))
     counts = write_back(ledger, by_code)
@@ -344,7 +386,14 @@ def main(argv=None) -> int:
 
     if a.struct:
         batch = json.loads(pathlib.Path(a.struct).read_text(encoding="utf-8"))
-        tc = _settle_struct_batch(ledger, batch, results)
+        # 半全场票需上半场比分 → 有则从竞彩接口(sectionsNo1)按需取一次
+        need_ht = any(p.get("kind") == "htft"
+                      for t in batch for leg in t.get("legs", []) for p in leg.get("picks", []))
+        ht_results = {}
+        if need_ht:
+            ht_results = load_ht_results()
+            print(f"半全场票检测到 → 已取半场比分 {len(ht_results)} 场")
+        tc = _settle_struct_batch(ledger, batch, results, ht_results)
         print(f"tickets 层: 已结 {tc['settled']} / 待结 {tc['pending']} / "
               f"待人工 {tc['manual']} / 跳过(已结) {tc['skipped']}")
         for who, typ, r in tc["_detail"]:
