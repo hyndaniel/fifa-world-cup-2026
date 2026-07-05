@@ -24,8 +24,8 @@
     "name": "生死战必有胜负",
     "trigger": "平=双亡,无平局动机",
     "effect": "平↓",
-    "triggered": 5,
-    "hits": 3
+    "triggered": 6,
+    "hits": 4
   },
   {
     "name": "强队刷净胜球",
