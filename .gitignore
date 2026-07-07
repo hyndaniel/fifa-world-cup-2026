@@ -23,7 +23,7 @@ node_modules/
 docs/superpowers/handoffs/
 
 # 报告 PDF 导出 (可从 reports/*.md 100%重新渲染, 不入库避免仓库体积膨胀)
-reports/pdf/
+reports/intel/pdf/
 reports/match-sims/pdf/
 
 # SQLite 运行时文件 (WAL/共享内存, 随 wc.db 自动生成, 不入库)
