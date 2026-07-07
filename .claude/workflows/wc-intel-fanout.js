@@ -57,10 +57,10 @@ export const meta = {
 
 // ⬇⬇⬇ 每天只改这里:今晚要检的场次(从 wc.db scout 出来后填)⬇⬇⬇
 const MATCHES = [
-  { num: '093', home: '葡萄牙', away: '西班牙', home_en: 'Portugal', away_en: 'Spain',
-    ko: 'ET 7/6 15:00 / 北京 7/7 03:00' },
-  { num: '094', home: '美国', away: '比利时', home_en: 'USA', away_en: 'Belgium',
-    ko: 'ET 7/6 20:00 / 北京 7/7 08:00' },
+  { num: '095', home: '阿根廷', away: '埃及', home_en: 'Argentina', away_en: 'Egypt',
+    ko: 'ET 7/7 12:00 / 北京 7/8 00:00' },
+  { num: '096', home: '瑞士', away: '哥伦比亚', home_en: 'Switzerland', away_en: 'Colombia',
+    ko: 'ET 7/7 16:00 / 北京 7/8 04:00' },
 ]
 // ⬆⬆⬆ 每天只改这里 ⬆⬆⬆
 
@@ -115,7 +115,7 @@ log(`今晚 ${MATCHES.length} 场:${MATCHES.map(m => `${m.home}vs${m.away}`).joi
 const research = (await parallel(
   MATCHES.flatMap(m => ANGLES.map(a => () =>
     agent(
-      `今天是 2026-07-06。深度调研 2026 世界杯淘汰赛「${m.home} vs ${m.away}」`
+      `今天是 2026-07-07。深度调研 2026 世界杯淘汰赛「${m.home} vs ${m.away}」`
       + `(${m.home_en} vs ${m.away_en},KO ${m.ko})的【${a.key}】维度:${a.prompt}。\n`
       + `用 WebSearch 搜最近 1–3 天的最新英文/中文源(Sports Mole / ESPN / Goal / Sky / Yahoo / BBC / 官方社媒等),尽量一手。\n`
       + `严格区分:✅确证(已发生的伤停/停赛/教练本人原话)、预计(媒体预测 XI/倾向)、叙事(主观势头)。\n`
@@ -146,7 +146,7 @@ phase('Verify')
 const verified = (await parallel(verifyTargets.map((f, idx) => () =>
   parallel([0, 1, 2].map(v => () =>
     agent(
-      `今天是 2026-07-06。对抗式证伪以下关于 2026 世界杯淘汰赛「${f.matchLabel}」的断言 —— 尽力反驳它:\n`
+      `今天是 2026-07-07。对抗式证伪以下关于 2026 世界杯淘汰赛「${f.matchLabel}」的断言 —— 尽力反驳它:\n`
       + `断言:「${f.claim}」\n`
       + `声称信源:${(f.sources || []).join(' , ') || '(无)'}\n`
       + `用 WebSearch 核查最新(近 1–3 天)源。判定规则:查无实据 / 已过时被覆盖 / 过度解读 / 二手加戏 / 把通用规则说成本场特例 → refuted=true;`
