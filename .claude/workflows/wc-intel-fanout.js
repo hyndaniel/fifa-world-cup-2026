@@ -57,17 +57,17 @@ export const meta = {
 
 // ⬇⬇⬇ 每天只改这里:今晚要检的场次(从 wc.db scout 出来后填)⬇⬇⬇
 const MATCHES = [
-  { num: '095', home: '阿根廷', away: '埃及', home_en: 'Argentina', away_en: 'Egypt',
-    ko: 'ET 7/7 12:00 / 北京 7/8 00:00' },
-  { num: '096', home: '瑞士', away: '哥伦比亚', home_en: 'Switzerland', away_en: 'Colombia',
-    ko: 'ET 7/7 16:00 / 北京 7/8 04:00' },
+  { num: '097', home: '法国', away: '摩洛哥', home_en: 'France', away_en: 'Morocco',
+    ko: 'QF · ET 7/9 16:00 / 北京 7/10 04:00 · 波士顿(福克斯堡)Gillette Stadium 露天中立场' },
 ]
-// ⬆⬆⬆ 每天只改这里 ⬆⬆⬆
+// 今晚的日期(ISO,ET/北京当天;research+verify 的「今天是」锚,决定「最近 1-3 天」时效窗)
+const TODAY = '2026-07-09'
+// ⬆⬆⬆ 每天只改这里(MATCHES + TODAY)⬆⬆⬆
 
 // 6 角度(焊死,对齐 07-03/04/05 验证过的分类法:停赛与黄牌、裁判各自单拎),逐场检索
 const ANGLES = [
   { key: '伤停出勤', prompt: '伤病、体能/带伤、出勤状态、是否报销(区分已发生确证 vs 存疑)' },
-  { key: '停赛与黄牌', prompt: '停赛名单、黄牌累计(R16 前黄牌不清零、R32 吃到的单黄带入今晚、今晚再领一黄=停 QF);逐名点出谁一黄在身' },
+  { key: '停赛与黄牌', prompt: '停赛名单、直红/双黄罚下、黄牌累计规则(FIFA:淘汰赛 R32/R16/QF 三轮单黄合并累计、不清零;R32 或 R16 吃到的单黄带入今晚 QF;但单黄累计在四分之一决赛结束后清零一次 → 今晚 QF 再吃第二张累计黄牌**不会**导致半决赛停赛,唯有同场两黄或直红=下一场半决赛停赛);逐名点出谁一黄在身、本场有无确定停赛者' },
   { key: '首发轮换战术', prompt: '前瞻媒体预计首发 XI、阵型、可能轮换、教练用人倾向,以及赛前发布会教练/球员原话、战术意图、关键对位(区分官宣 vs 媒体预测)' },
   { key: '场地天气裁判', prompt: '球场/城市/海拔、天气预报、主裁及 VAR 任命(有则引一手源,无则明说缺口)' },
   { key: '盘口超算市场', prompt: '博彩盘口(胜平负/晋级)、Opta 及各家超算晋级概率、市场共识倾向' },
@@ -115,7 +115,7 @@ log(`今晚 ${MATCHES.length} 场:${MATCHES.map(m => `${m.home}vs${m.away}`).joi
 const research = (await parallel(
   MATCHES.flatMap(m => ANGLES.map(a => () =>
     agent(
-      `今天是 2026-07-07。深度调研 2026 世界杯淘汰赛「${m.home} vs ${m.away}」`
+      `今天是 ${TODAY}。深度调研 2026 世界杯淘汰赛「${m.home} vs ${m.away}」`
       + `(${m.home_en} vs ${m.away_en},KO ${m.ko})的【${a.key}】维度:${a.prompt}。\n`
       + `用 WebSearch 搜最近 1–3 天的最新英文/中文源(Sports Mole / ESPN / Goal / Sky / Yahoo / BBC / 官方社媒等),尽量一手。\n`
       + `严格区分:✅确证(已发生的伤停/停赛/教练本人原话)、预计(媒体预测 XI/倾向)、叙事(主观势头)。\n`
@@ -146,7 +146,7 @@ phase('Verify')
 const verified = (await parallel(verifyTargets.map((f, idx) => () =>
   parallel([0, 1, 2].map(v => () =>
     agent(
-      `今天是 2026-07-07。对抗式证伪以下关于 2026 世界杯淘汰赛「${f.matchLabel}」的断言 —— 尽力反驳它:\n`
+      `今天是 ${TODAY}。对抗式证伪以下关于 2026 世界杯淘汰赛「${f.matchLabel}」的断言 —— 尽力反驳它:\n`
       + `断言:「${f.claim}」\n`
       + `声称信源:${(f.sources || []).join(' , ') || '(无)'}\n`
       + `用 WebSearch 核查最新(近 1–3 天)源。判定规则:查无实据 / 已过时被覆盖 / 过度解读 / 二手加戏 / 把通用规则说成本场特例 → refuted=true;`
