@@ -62,6 +62,45 @@ def test_collect_smoke_db_assembles_per_market():
     assert pm["bucket"] == "动机畸形"                       # reliability='乱' → 动机畸形桶
 
 
+def test_collect_excludes_matches_without_v2_prediction():
+    """🔴 同基铁则回归: 没有 v2 预测的场次(如混进来的其他联赛)不得进跑分卡。
+
+    否则市场基线在全部场次上平均、v1/v2 只在有预测的场次上平均 —— **三方分母不同、
+    对比无效**。2026-07-13 实测: 市场基线掺进 34 场其他联赛后, 从 0.374 被抬到 0.444,
+    制造出「v2(0.430) 跑赢市场」的假象; 同基复算后真相相反(市场 0.374 优于 v2 0.430)。
+    """
+    d = tempfile.mkdtemp()
+    db = os.path.join(d, "c.db")
+    wc_mk = "周三053"       # 世界杯场次: 有 v2 预测
+    other_mk = "周三201"    # 其他联赛: 只有盘口与赛果, 无 v1/v2 预测
+
+    conn = sqlite3.connect(db)
+    conn.execute("""CREATE TABLE odds_cache (id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts TEXT, source TEXT, match_key TEXT, label TEXT, ko TEXT, payload_json TEXT)""")
+    for mk in (wc_mk, other_mk):
+        conn.execute("INSERT INTO odds_cache(ts,source,match_key,label,ko,payload_json) "
+                     "VALUES (?,?,?,?,?,?)",
+                     ("2026-06-25T09:00:00+08:00", "zucai", mk, "A vs B", "ko",
+                      json.dumps({"had": {"h": 6.00, "d": 3.87, "a": 1.44}})))
+    conn.commit()
+    conn.close()
+
+    # 两场都有赛果 + 都能算出市场基线
+    record_result(db, wc_mk, 0, 1)
+    record_result(db, other_mk, 0, 1)
+    assert baseline_market(db, other_mk, HAD_CFG), "前提: 其他联赛也算得出市场基线"
+
+    # 只有世界杯那场有 v2 预测
+    bl = baseline_market(db, wc_mk, HAD_CFG)
+    pred = build_v2_prediction(wc_mk, "中", [],
+                               {"had": {"baseline": bl["baseline"], "deviations": []}})
+    record_v2_prediction(db, wc_mk, pred)
+
+    keys = [pm["match_key"] for pm in collect(db)["had"]["per_match"]]
+    assert wc_mk in keys
+    assert other_mk not in keys, "无 v2 预测的场次不得计入跑分卡(会破坏三方同基比较)"
+
+
 def test_render_bucket_table_splits_regular_vs_anomaly():
     collected = {
         "had": {"rows": [], "per_match": [

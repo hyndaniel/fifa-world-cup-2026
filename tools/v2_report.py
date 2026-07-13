@@ -218,6 +218,21 @@ def collect(cache_path):
         hg, ag = goals
         v2rec = get_v2_prediction(cache_path, mk)
         v1rec = get_v1(cache_path, mk)
+
+        # 🔴 同基铁则: 只统计**有 v2 预测**的场次。
+        #
+        # match_results 里混着非世界杯场次(2xx 其他联赛), 它们没有 v1/v2 预测, 只有市场基线。
+        # 此前照收不误 → 市场基线在 86 场上平均, 而 v1/v2 只在 44 场上平均, **三方分母不同、
+        # 对比无效**; 叠加 2xx 的赛果还会被跨周主键覆盖而错配(match_key='周五201' 这类周内
+        # 循环编号不含日期, 上周五被本周五覆盖 → 拿 A 场预测对 B 场比分算分, 周一201 的 Brier
+        # 因此飙到 1.41), 把市场基线的分数往上抬。
+        #
+        # 两个错误叠加, 制造了「v2(0.430) 跑赢市场(0.444)」的假象。同基复算后真相相反:
+        # 市场基线 0.374 显著优于 v2 0.430(2026-07-13 实测, n=44)。
+        # 评测的意义在于三方在**同一批样本**上比 —— 没有 v2 预测的场次不属于这个比较。
+        if not v2rec:
+            continue
+
         mk_bucket = _bucket_for_match(v2rec)
         for market, cfg in MARKETS:
             bl = baseline_market(cache_path, mk, cfg)
