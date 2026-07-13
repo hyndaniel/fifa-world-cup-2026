@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import pathlib
+import re
 import sqlite3
 import sys
 
@@ -105,11 +106,28 @@ def _wc_db_ready(wc_db_path: str, cache_path: str) -> bool:
     return n == 0
 
 
+def is_world_cup_key(match_key: str) -> bool:
+    """场次号 < 200 = 世界杯正赛(001-104);200+ = 混进来的其他联赛。
+
+    🔴 其他联赛(2xx)必须挡在世界杯台账/跑分卡之外, 有两个独立理由:
+      1. 它们没有 v1/v2 预测, 只有市场基线 —— 混进来会让市场基线的分母远大于 v1/v2,
+         三方**不在同一批样本上比较**, 顶部那张对比表直接失效。
+      2. 它们的赛果**会被静默覆盖**: match_results 的主键 match_key 是「周五201」这种
+         周内循环编号、不含日期, 上周五的 201 场被本周五的 201 场覆盖 → 预测还是 A 场的、
+         赛果已换成 B 场的, 算出来的 Brier 是垃圾(实测 周一201 因此从 0.66 飙到 1.41)。
+         世界杯场次号 001-104 全局唯一, 不受此影响。
+    """
+    m = re.search(r"(\d{3})$", match_key or "")
+    return bool(m) and int(m.group(1)) < 200
+
+
 def render_mech_tags(cache_path: str, out_path: str, wc_db_path: str = DEFAULT_WC_DB) -> None:
     """从 match_results 全量重生成复盘对错标台账(确定性、自愈,同跑分卡)。
 
     每行:记录时间 ts + 场次 + 对阵(查 wc.db 队名)+ 实际 outcome + 三方 had argmax 对错。
     内容仅取决于 match_results + 各方预测,故重跑稳定无 diff;一次性补全历史行的队名。
+
+    只收世界杯正赛(见 is_world_cup_key):其他联赛的赛果会被跨周主键覆盖、已不可信。
     """
     conn = sqlite3.connect(cache_path)
     try:
@@ -122,6 +140,8 @@ def render_mech_tags(cache_path: str, out_path: str, wc_db_path: str = DEFAULT_W
     names = _team_names(wc_db_path)
     lines = [_LEDGER_HEADER]
     for key, ts in rows:
+        if not is_world_cup_key(key):
+            continue
         t = mech_tags(cache_path, key)
         lines.append(
             f"| {ts} | {key} | {names.get(key, '')} | "
