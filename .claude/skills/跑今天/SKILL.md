@@ -268,7 +268,9 @@ python3 tools/v2_report.py
 看板**原样存、原样回吐**。
 
 1. **取看板地址 + 密码(现取,不打印、不入库):**
-   从仓库根 `config.toml` 读 `[server] password`,与看板基址组 basic auth。
+   从 launchd plist `~/Library/LaunchAgents/com.wc.refresh-all.plist` 的 `EnvironmentVariables`
+   段取 `WC_INGEST_PW` / `WC_INGEST_URL` / `WC_INGEST_USER`(`plutil -extract … raw`),组 basic auth。
+   **不是 `config.toml`——那个文件在本机不存在(2026-07-13 实测)。**
    - `WC_INGEST_URL` 在本步取**看板基址、不含路径**(如 `http://18.166.71.60:8000`),与
      `tools/collect_enrich.py` 一致。**注意 `tools/collect_zucai.py` 把 `WC_INGEST_URL` 当成含
      `/api/ingest/zucai` 的全路径用,语义不同——本步勿沿用 zucai 那份导出值;** 下面 POST 脚本
@@ -320,7 +322,7 @@ python3 tools/v2_report.py
    python3 - <<'PY'
    import base64, json, os, urllib.request
    base = os.environ["WC_INGEST_URL"].split("/api/ingest")[0].rstrip("/")  # 剥误带路径→纯基址
-   pw   = os.environ["WC_INGEST_PW"]                 # 从 config.toml [server].password 现取,不打印
+   pw   = os.environ["WC_INGEST_PW"]                 # 从 launchd plist 现取(见上),不打印
    user = os.environ.get("WC_INGEST_USER", "admin")
    decisions = [ ... ]                               # 上面 join 出的 Decision 列表
    body = json.dumps({"decisions": decisions}, ensure_ascii=False).encode()
@@ -331,7 +333,7 @@ python3 tools/v2_report.py
        print(r.status, r.read().decode())
    PY
    ```
-   (`WC_INGEST_PW` 从 config.toml 现取后 export 进环境再跑,跑完即弃;**别把密码写进脚本字面量、别 echo。**)
+   (`WC_INGEST_PW` 从 launchd plist 现取后 export 进环境再跑,跑完即弃;**别把密码写进脚本字面量、别 echo。**)
 
 ### 第 6 步 · 给用户一段扫读摘要
 
@@ -362,7 +364,7 @@ python3 tools/v2_report.py
 
 - 🔴 **v1⊥v2:** 由 `wc-predict-fanout` workflow **脚本结构焊死**——v1/v2 是同一 `parallel()` 里两个
   独立 `agent()`,`v2Prompt` 只读 baseline + factCard 的纯函数,**零** v1 输出。护三方 Brier 对照。改派单逻辑改脚本、跑其 dry-run 复核,别绕回手工派。
-- 🔒 **密码 secret:** 看板密码从 config.toml 现取,**不 print、不入库、不写报告**。
+- 🔒 **密码 secret:** 看板密码从 launchd plist(`com.wc.refresh-all.plist` 的 `EnvironmentVariables`)现取,**不 print、不入库、不写报告**。
 - 📏 **加不删:** 本 skill 只编排现有 agent/脚本,不重写预测/价值逻辑;不改 `.claude/agents/*.md`。
 - ⏱ **ET 铁律:** 开球判定一律看 ET 当下,温哥华场 PT = ET − 3。
 - 🧊 **不拿陈旧硬算:** Poly/盘口缺或旧 → 明说、降靠谱度,不伪造黄档。
