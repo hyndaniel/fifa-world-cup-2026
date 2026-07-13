@@ -42,7 +42,11 @@ git commit -m "..."
 ### 2. 直推 HK 看板
 
 ```
-export WC_INGEST_PW=<看板密码>          # 从本地 config.toml [server].password 现取, 用完即弃, 不打印
+# 密码/基址/用户名从 launchd plist 现取(见下方红线), 用完即弃, 不打印:
+PLIST=~/Library/LaunchAgents/com.wc.refresh-all.plist
+export WC_INGEST_PW=$(plutil   -extract EnvironmentVariables.WC_INGEST_PW   raw "$PLIST")
+export WC_INGEST_URL=$(plutil  -extract EnvironmentVariables.WC_INGEST_URL  raw "$PLIST")
+export WC_INGEST_USER=$(plutil -extract EnvironmentVariables.WC_INGEST_USER raw "$PLIST")
 
 # 台账整份推(会覆盖服务器上 tickets/recommendations/people 等顶层字段, 未在
 # 本地文件里出现的顶层字段服务器保留原值, 不会被清空):
@@ -53,8 +57,13 @@ python3 tools/push_data.py reports reports/agents/wc-bet__下注复盘.md
 python3 tools/push_data.py reports --all
 ```
 
-密码:从 `config.toml` `[server].password` 现取,`export` 进环境变量给脚本用,
-**不打印、不写进任何报告/对话**(跟 fifa-deploy/refresh_all 一致的规矩)。
+> **🔴 密码不在 `config.toml`——那个文件在本机根本不存在。** 真实来源是 launchd 定时任务的 plist
+> `~/Library/LaunchAgents/com.wc.refresh-all.plist`,其 `EnvironmentVariables` 段里有
+> `WC_INGEST_PW` / `WC_INGEST_URL` / `WC_INGEST_USER` 三个键,用 `plutil -extract … raw` 取
+> (2026-07-13 实测踩坑;本文档此前写的"从 `config.toml` `[server].password` 取"是错的)。
+
+取来 `export` 进环境变量给脚本用,**不打印、不写进任何报告/对话**(跟 fifa-deploy/refresh_all
+一致的规矩)。
 
 ### 3. 验证
 
