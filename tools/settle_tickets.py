@@ -256,17 +256,20 @@ def load_ht_results(cfg: dict | None = None) -> dict:
 
 # ============ 幂等写回 ledger ============
 def write_back(ledger: dict, results_by_code: dict) -> dict:
-    """把 {唯一码: SettleResult} 写回 ledger['tickets](按唯一码匹配)。幂等: 已结票跳过不覆盖。
-    已结→写 pnl/settled/legs_hit; 待结→只更新进度串保持待结; 待人工→记 reason 保持待结。"""
+    """把 {(唯一码, who): SettleResult} 写回 ledger['tickets']。幂等: 已结票跳过不覆盖。
+    已结→写 pnl/settled/legs_hit; 待结→只更新进度串保持待结; 待人工→记 reason 保持待结。
+
+    键含 who: 一叠同款实体票按人拆成多条记录时共用同一个唯一码(合影只采到最上面一张的码),
+    单靠唯一码会让两条记录互相覆盖成同一个 pnl。"""
     counts = {"settled": 0, "pending": 0, "manual": 0, "skipped": 0}
     for t in ledger.get("tickets", []):
-        code = t.get("唯一码")
-        if code not in results_by_code:
+        key = (t.get("唯一码"), t.get("who"))
+        if key not in results_by_code:
             continue
         if t.get("settled"):
             counts["skipped"] += 1
             continue
-        r = results_by_code[code]
+        r = results_by_code[key]
         st = r["status"]
         if st == "已结":
             t["pnl"] = r["pnl"]
@@ -355,8 +358,11 @@ def _settle_struct_batch(ledger: dict, struct_batch: list, results: dict,
     by_code = {}
     detail = []
     for t in struct_batch:
+        key = (t["唯一码"], t.get("who"))
+        if key in by_code:
+            raise ValueError(f"batch 内重复的 (唯一码, who): {key} —— 同一人同一张票不该出现两条")
         r = settle_ticket(t, results, ht_results)
-        by_code[t["唯一码"]] = r
+        by_code[key] = r
         detail.append((t.get("who", "?"), t.get("type", t["唯一码"]), r))
     counts = write_back(ledger, by_code)
     counts["_detail"] = detail
