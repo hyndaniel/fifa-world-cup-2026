@@ -61,23 +61,56 @@ def poll_once(
     fetch_event = poly_fetch_event or polymarket.fetch_event
 
     # 3. 逐场处理
-    processed = 0
+    #
+    # 🔴 两段式, 且**场次登记不依赖 Poly**:
+    #    Poly 是增强项(去水概率/value), 竞彩才是场次的权威来源。此前 Poly 拿不到 slug 就
+    #    `continue` 掉整场, 连 matches 都不写 —— 于是 Poly 一被墙/超时, matches 表就永久
+    #    停摆, 下游(跑今天判场 / v2 事实卡 / 看板决策卡)全线卡死, 哪怕竞彩数据完好无损。
+    #    (2026-07-13 实测: 半决赛 101/102 竞彩早已上市, matches 却停在 84 场。)
+    #    现在: 先登记场次 + 存竞彩快照, Poly 失败只损失该场的 poly 快照与 value_points。
+    registered = 0   # 场次登记成功(竞彩侧)
+    processed = 0    # 含 Poly 的完整处理 —— 返回值语义保持不变
     for z in matches:
         hen = en(z.home_cn)
         aen = en(z.away_cn)
         if not hen or not aen:
+            # 英文名是 Poly 配对与 matches.home_en 的必填项, 无从补齐 → 仍跳过
             log.warning(
                 "skip %s %s/%s: 队名未收录 (hen=%r aen=%r)",
                 z.zucai_num, z.home_cn, z.away_cn, hen, aen,
             )
             continue
 
+        # --- 第 1 段: 登记场次 + 竞彩快照 (不碰 Poly) ---
         # 单场任何异常 (脏数据/解析失败) 只跳过该场, 不拖垮整批
+        try:
+            # upsert 是整行覆盖(ON CONFLICT DO UPDATE 用 excluded.*), 若这里传 poly_slug=None
+            # 会把已存的 slug 抹掉; 故先取旧值兜住, 待下段拿到新 slug 再覆盖。
+            prev = db.match(z.zucai_num)
+            prev_slug = prev["poly_slug"] if prev else None
+
+            match_id = db.upsert_match(
+                zucai_num=z.zucai_num,
+                home_cn=z.home_cn, away_cn=z.away_cn,
+                home_en=hen, away_en=aen,
+                poly_slug=prev_slug,
+                ko_bj=z.ko_bj, cutoff_bj=z.cutoff_bj,
+            )
+            db.save_snapshot(match_id, "zucai", z.__dict__)
+            registered += 1
+        except Exception:  # noqa: BLE001
+            log.exception(
+                "skip %s %s/%s: 场次登记失败",
+                z.zucai_num, z.home_cn, z.away_cn,
+            )
+            continue
+
+        # --- 第 2 段: Poly 增强 (失败不影响上面已登记的场次) ---
         try:
             slug, _title = polymarket.find_slug(idx, hen, aen)
             if not slug:
                 log.warning(
-                    "skip %s %s/%s: poly 无对应 slug",
+                    "%s %s/%s: poly 无对应 slug — 场次已登记, 仅缺 poly 去水/value",
                     z.zucai_num, z.home_cn, z.away_cn,
                 )
                 continue
@@ -85,7 +118,7 @@ def poll_once(
             base, more = fetch_event(slug)
             if not base:
                 log.warning(
-                    "skip %s %s/%s (slug=%s): poly event 为空",
+                    "%s %s/%s (slug=%s): poly event 为空 — 场次已登记, 仅缺 poly 去水/value",
                     z.zucai_num, z.home_cn, z.away_cn, slug,
                 )
                 continue
@@ -93,24 +126,27 @@ def poll_once(
             probs = polymarket.parse_probs(base, more, hen, aen)
             points = compute_value(z, probs, yellow_below=yellow_below)
 
-            match_id = db.upsert_match(
-                zucai_num=z.zucai_num,
-                home_cn=z.home_cn, away_cn=z.away_cn,
-                home_en=hen, away_en=aen,
-                poly_slug=slug,
-                ko_bj=z.ko_bj, cutoff_bj=z.cutoff_bj,
-            )
-            db.save_snapshot(match_id, "zucai", z.__dict__)
+            if slug != prev_slug:  # 补回/更新 slug
+                db.upsert_match(
+                    zucai_num=z.zucai_num,
+                    home_cn=z.home_cn, away_cn=z.away_cn,
+                    home_en=hen, away_en=aen,
+                    poly_slug=slug,
+                    ko_bj=z.ko_bj, cutoff_bj=z.cutoff_bj,
+                )
             db.save_snapshot(match_id, "poly", probs.__dict__)
             db.save_value_points(match_id, points)
             processed += 1
-        except Exception:  # noqa: BLE001 — 单场失败不应中断整批
+        except Exception:  # noqa: BLE001 — 单场 poly 失败不应中断整批
             log.exception(
-                "skip %s %s/%s: 单场处理异常",
+                "%s %s/%s: poly 段异常 — 场次已登记, 仅缺 poly 去水/value",
                 z.zucai_num, z.home_cn, z.away_cn,
             )
 
-    log.info("poll_once: 处理 %d/%d 场", processed, len(matches))
+    log.info(
+        "poll_once: 登记 %d/%d 场(竞彩), 其中 %d 场含 Poly",
+        registered, len(matches), processed,
+    )
     return processed
 
 

@@ -72,8 +72,13 @@ def test_poll_once_writes_value_points(tmp_path):
     assert rang2, "应有西佛的 让-2 平 value point"
 
 
-def test_poll_once_skips_unmatched(tmp_path):
-    """poly_list 为空 → 每场都找不到 slug → 0 场处理, 库里无 value_points。"""
+def test_poll_once_registers_matches_even_when_poly_unavailable(tmp_path):
+    """🔴 回归: Poly 全挂(拿不到任何 slug)时, 场次仍须照常登记进 matches。
+
+    Poly 是增强项, 竞彩才是场次的权威来源。旧实现在 `if not slug: continue` 处跳过整场,
+    连 matches 都不写 —— Poly 一被墙, matches 表就永久停摆, 下游判场/预测/看板全线卡死
+    (2026-07-13 实测: 半决赛竞彩早已上市, matches 却停在四分之一决赛)。
+    """
     db = Db(tmp_path / "t.db")
     db.init()
 
@@ -81,9 +86,48 @@ def test_poll_once_skips_unmatched(tmp_path):
         db,
         {},
         zucai_fetch=lambda: _load("zucai_sample.json"),
-        poly_list=lambda: {},
+        poly_list=lambda: {},                 # Poly 索引全空 → 每场都配不到 slug
         poly_fetch_event=_fake_fetch_event,
     )
 
+    # 含 Poly 的完整处理数仍是 0, value_points 仍空(返回值语义不变)
     assert n == 0
     assert db.value_points() == []
+
+    # 但场次必须已登记, 且竞彩字段完整
+    matches = db.matches()
+    assert matches, "Poly 不可用时场次仍须登记进 matches"
+    esp = next(m for m in matches if m["home_cn"] == "西班牙")
+    assert esp["home_en"] == "Spain" and esp["away_en"] == "Cabo Verde"
+    assert esp["ko_bj"]                       # 开球时间在 → 下游判场可用
+    assert esp["poly_slug"] is None           # 只是缺 poly, 不是缺场次
+
+
+def test_poll_once_poly_failure_does_not_wipe_existing_slug(tmp_path):
+    """🔴 回归: 先有 slug 的场, 之后某轮 Poly 挂了, 不能把已存的 poly_slug 抹成 None。
+
+    upsert_match 是整行覆盖(ON CONFLICT DO UPDATE 用 excluded.*), 两段式里第 1 段若无脑
+    传 poly_slug=None, 会在 Poly 故障轮把好不容易配上的 slug 清掉。
+    """
+    db = Db(tmp_path / "t.db")
+    db.init()
+
+    # 第 1 轮: Poly 正常 → 西佛配上 slug
+    poll_once(
+        db, {},
+        zucai_fetch=lambda: _load("zucai_sample.json"),
+        poly_list=_poly_idx,
+        poly_fetch_event=_fake_fetch_event,
+    )
+    esp = next(m for m in db.matches() if m["home_cn"] == "西班牙")
+    assert esp["poly_slug"] == ESP_CVI_SLUG
+
+    # 第 2 轮: Poly 全挂 → slug 必须留着, 不被抹掉
+    poll_once(
+        db, {},
+        zucai_fetch=lambda: _load("zucai_sample.json"),
+        poly_list=lambda: {},
+        poly_fetch_event=_fake_fetch_event,
+    )
+    esp2 = next(m for m in db.matches() if m["home_cn"] == "西班牙")
+    assert esp2["poly_slug"] == ESP_CVI_SLUG, "Poly 故障轮不得清掉已存的 poly_slug"
