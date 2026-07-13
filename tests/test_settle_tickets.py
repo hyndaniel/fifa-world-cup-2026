@@ -273,8 +273,8 @@ def _ledger_with(*tickets):
 
 
 def test_write_back_settles_finished_ticket():
-    led = _ledger_with({"唯一码": "A", "settled": False, "pnl": None, "legs_hit": "待结"})
-    res = {"A": {"status": "已结", "pnl": 8.0, "legs_hit": "命中2/2 086✅ 088✅", "reason": ""}}
+    led = _ledger_with({"唯一码": "A", "who": "HYN", "settled": False, "pnl": None, "legs_hit": "待结"})
+    res = {("A", "HYN"): {"status": "已结", "pnl": 8.0, "legs_hit": "命中2/2 086✅ 088✅", "reason": ""}}
     n = s.write_back(led, res)
     t = led["tickets"][0]
     assert t["settled"] is True and t["pnl"] == 8.0 and "命中" in t["legs_hit"]
@@ -282,26 +282,51 @@ def test_write_back_settles_finished_ticket():
 
 
 def test_write_back_partial_updates_progress_keeps_pending():
-    led = _ledger_with({"唯一码": "A", "settled": False, "pnl": None, "legs_hit": "待结"})
-    res = {"A": {"status": "待结", "pnl": None, "legs_hit": "086✅ 088待结 (部分待结)", "reason": ""}}
+    led = _ledger_with({"唯一码": "A", "who": "HYN", "settled": False, "pnl": None, "legs_hit": "待结"})
+    res = {("A", "HYN"): {"status": "待结", "pnl": None, "legs_hit": "086✅ 088待结 (部分待结)", "reason": ""}}
     s.write_back(led, res)
     t = led["tickets"][0]
     assert t["settled"] is False and t["pnl"] is None and "待结" in t["legs_hit"]
 
 
 def test_write_back_idempotent_skips_already_settled():
-    led = _ledger_with({"唯一码": "A", "settled": True, "pnl": 5.0, "legs_hit": "命中1/1"})
-    res = {"A": {"status": "已结", "pnl": 999.0, "legs_hit": "changed", "reason": ""}}
+    led = _ledger_with({"唯一码": "A", "who": "HYN", "settled": True, "pnl": 5.0, "legs_hit": "命中1/1"})
+    res = {("A", "HYN"): {"status": "已结", "pnl": 999.0, "legs_hit": "changed", "reason": ""}}
     n = s.write_back(led, res)
     assert led["tickets"][0]["pnl"] == 5.0   # 不覆盖已结
     assert n["skipped"] == 1
 
 
 def test_write_back_manual_flag_records_reason_keeps_pending():
-    led = _ledger_with({"唯一码": "A", "settled": False, "pnl": None, "legs_hit": "待结"})
-    res = {"A": {"status": "待人工", "pnl": None, "legs_hit": "待人工", "reason": "半全场无源"}}
+    led = _ledger_with({"唯一码": "A", "who": "HYN", "settled": False, "pnl": None, "legs_hit": "待结"})
+    res = {("A", "HYN"): {"status": "待人工", "pnl": None, "legs_hit": "待人工", "reason": "半全场无源"}}
     s.write_back(led, res)
     assert led["tickets"][0]["settled"] is False
+
+
+def test_write_back_same_code_split_between_people_does_not_cross_write():
+    """一叠同款票按人拆成两条、共用同一唯一码时, 各写各的 pnl, 不互相覆盖。"""
+    led = _ledger_with(
+        {"唯一码": "A", "who": "HYN", "stake": 800, "settled": False, "pnl": None, "legs_hit": "待结"},
+        {"唯一码": "A", "who": "YBB", "stake": 200, "settled": False, "pnl": None, "legs_hit": "待结"},
+    )
+    res = {
+        ("A", "HYN"): {"status": "已结", "pnl": 858.56, "legs_hit": "命中2/2 097✅ 098✅", "reason": ""},
+        ("A", "YBB"): {"status": "已结", "pnl": 214.64, "legs_hit": "命中2/2 097✅ 098✅", "reason": ""},
+    }
+    n = s.write_back(led, res)
+    assert led["tickets"][0]["pnl"] == 858.56
+    assert led["tickets"][1]["pnl"] == 214.64
+    assert n["settled"] == 2
+
+
+def test_settle_struct_batch_rejects_duplicate_code_and_who():
+    led = _ledger_with({"唯一码": "A", "who": "HYN", "settled": False, "pnl": None, "legs_hit": "待结"})
+    leg = {"match_key": "086", "picks": [{"kind": "had", "sel": "h", "odds": 2.0}]}
+    dup = {"唯一码": "A", "who": "HYN", "stake": 2, "mult": 1, "mode": "combo",
+           "guan_levels": [], "legs": [leg], "expect_notes": 1, "odds_max": None}
+    with pytest.raises(ValueError, match="重复"):
+        s._settle_struct_batch(led, [dup, dict(dup)], {"086": (1, 0)})
 
 
 # ============ recommendations 层: 单腿胜平负判定 ============
