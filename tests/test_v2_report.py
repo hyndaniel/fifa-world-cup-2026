@@ -101,6 +101,44 @@ def test_collect_excludes_matches_without_v2_prediction():
     assert other_mk not in keys, "无 v2 预测的场次不得计入跑分卡(会破坏三方同基比较)"
 
 
+def test_collect_calibration_same_basis_market_and_v2_same_matches():
+    """🔴 同基铁则回归(校准表):市场列与 v2 列必须来自**同一批场次**。
+
+    旧实现「无 v2 预测的场只入市场点」→ 市场列吃 86 场、v2 列只吃 44 场,两列不可比;
+    且多出来的那批全是 2xx 其他联赛,其盘口每天被 refresh_all 刷新、赛果又被跨周主键
+    覆盖 → 每跑一次 cron 校准表就变一次,跑分卡在 git 里天天有假 diff。
+    """
+    d = tempfile.mkdtemp()
+    db = os.path.join(d, "c.db")
+    wc_mk = "周三053"       # 有 v2 预测
+    other_mk = "周三201"    # 其他联赛: 有盘口有赛果, 无 v2 预测
+
+    conn = sqlite3.connect(db)
+    conn.execute("""CREATE TABLE odds_cache (id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts TEXT, source TEXT, match_key TEXT, label TEXT, ko TEXT, payload_json TEXT)""")
+    for mk in (wc_mk, other_mk):
+        conn.execute("INSERT INTO odds_cache(ts,source,match_key,label,ko,payload_json) "
+                     "VALUES (?,?,?,?,?,?)",
+                     ("2026-06-25T09:00:00+08:00", "zucai", mk, "A vs B", "ko",
+                      json.dumps({"had": {"h": 6.00, "d": 3.87, "a": 1.44}})))
+    conn.commit()
+    conn.close()
+
+    record_result(db, wc_mk, 0, 1)
+    record_result(db, other_mk, 0, 1)
+
+    bl = baseline_market(db, wc_mk, HAD_CFG)
+    pred = build_v2_prediction(wc_mk, "中", [],
+                               {"had": {"baseline": bl["baseline"], "deviations": []}})
+    record_v2_prediction(db, wc_mk, pred)
+
+    cal = collect_calibration(db)
+    # had 每场贡献 h/d/a 三条 → 同基时两列长度必须相等(各 3 条, 只有世界杯那场)
+    assert len(cal["market"]) == 3, "市场列不得收入无 v2 预测的场次"
+    assert len(cal["v2"]) == 3
+    assert len(cal["market"]) == len(cal["v2"]), "校准表两列必须同基(同一批场次)"
+
+
 def test_render_bucket_table_splits_regular_vs_anomaly():
     collected = {
         "had": {"rows": [], "per_match": [

@@ -272,7 +272,15 @@ def collect_score_arm(cache_path):
 def collect_calibration(cache_path, market="had"):
     """收每条 (预测概率%, 是否发生) 配对,供校准分桶。默认 had:每场贡献 h/d/a 三条。
 
-    返回 {"v2":[(p,occ)..], "market":[(p,occ)..]};无 v2 预测的场只入市场点,无基线的场跳过。
+    返回 {"v2":[(p,occ)..], "market":[(p,occ)..]}。
+
+    🔴 同基铁则(与 collect() 一致):只收**有 v2 预测**的场次。
+    旧实现是「无 v2 预测的场只入市场点」——于是市场列吃 86 场、v2 列只吃 44 场,
+    **校准表两列根本不可比**(实测市场 n 总和 258 vs v2 132)。更糟的是多出来的那批
+    全是非世界杯的 2xx 其他联赛:它们的盘口**每天被 refresh_all 刷新**、赛果又被跨周
+    主键覆盖(match_key='周五201' 这类周内循环编号不含日期)→ **每跑一次 cron,校准表的
+    市场列就变一次数字**,跑分卡永远处于「已修改」状态、git 里天天有假 diff。
+    (2026-07-13 修 collect() 的同基问题时漏了本函数,7/14 补上。)
     """
     cfg = dict(MARKETS)[market]
     v2_pairs, mkt_pairs = [], []
@@ -281,6 +289,9 @@ def collect_calibration(cache_path, market="had"):
         if not goals:
             continue
         hg, ag = goals
+        v2rec = get_v2_prediction(cache_path, mk)
+        if not v2rec:
+            continue  # 同基:无 v2 预测的场次不进校准表(两列必须同一批样本)
         bl = baseline_market(cache_path, mk, cfg)
         if not bl:
             continue
@@ -289,8 +300,7 @@ def collect_calibration(cache_path, market="had"):
             continue
         for k, p in bl["baseline"].items():
             mkt_pairs.append((p, 1 if k == actual else 0))
-        v2p = ((get_v2_prediction(cache_path, mk) or {}).get("markets", {})
-               .get(market) or {}).get("v2")
+        v2p = ((v2rec.get("markets", {}) or {}).get(market) or {}).get("v2")
         if v2p:
             for k, p in v2p.items():
                 v2_pairs.append((p, 1 if k == actual else 0))
