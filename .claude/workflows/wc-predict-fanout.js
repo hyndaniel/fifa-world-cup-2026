@@ -44,30 +44,30 @@ export const meta = {
 //      两者都空才不派 agent。每次跑改这里(v2_baseline / v2_factcard 由主会话第 3a 步预计算)。
 const MATCHES = [
   {
-    match_key: '周二101',
-    home_cn: '法国',
-    away_cn: '西班牙',
-    ko_et: 'ET 7/14 15:00(达拉斯当地 14:00 CT)',
-    ko_bj: '北京 7/15 03:00',
+    match_key: '周三102',
+    home_cn: '英格兰',
+    away_cn: '阿根廷',
+    ko_et: 'ET 7/15 15:00',
+    ko_bj: '北京 7/16 03:00',
     v2_baseline: {
-      had: "{'match_key': '周二101', 'market': 'had', 'baseline': {'h': 41.7, 'd': 29.4, 'a': 28.9}, 'sources': {'zucai': {'h': 42.8, 'd': 28.6, 'a': 28.6}, 'poly': {'h': 41.1, 'd': 29.8, 'a': 29.1}}, 'confidence': {'n_sources': 2, 'label': 'medium', 'max_spread': 1.7}}",
-      hhad: "{'match_key': '周二101', 'market': 'hhad', 'baseline': {'h': 19.3, 'd': 23.9, 'a': 56.8}, 'sources': {'zucai': {'h': 19.3, 'd': 23.9, 'a': 56.8}}, 'confidence': {'n_sources': 1, 'label': 'soft', 'max_spread': 0.0}, 'line': -1}",
-      ttg: "{'match_key': '周二101', 'market': 'ttg', 'baseline': {'0': 6.4, '1': 15.7, '2': 22.8, '3': 23.1, '4': 15.7, '5': 8.4, '6': 4.7, '7': 3.2}, 'sources': {'zucai': {'0': 6.4, '1': 15.7, '2': 22.8, '3': 23.2, '4': 15.7, '5': 8.4, '6': 4.7, '7': 3.2}}, 'confidence': {'n_sources': 1, 'label': 'soft', 'max_spread': 0.0}}",
+      had: "{'match_key': '周三102', 'market': 'had', 'baseline': {'h': 36.4, 'd': 32.7, 'a': 30.9}, 'sources': {'zucai': {'h': 37.7, 'd': 32.2, 'a': 30.1}, 'poly': {'h': 35.9, 'd': 32.9, 'a': 31.2}}, 'confidence': {'n_sources': 2, 'label': 'medium', 'max_spread': 1.8}}",
+      hhad: "{'match_key': '周三102', 'market': 'hhad', 'baseline': {'h': 15.7, 'd': 23.6, 'a': 60.7}, 'sources': {'zucai': {'h': 15.7, 'd': 23.6, 'a': 60.7}}, 'confidence': {'n_sources': 1, 'label': 'soft', 'max_spread': 0.0}, 'line': -1}",
+      ttg: "{'match_key': '周三102', 'market': 'ttg', 'baseline': {'0': 10.0, '1': 19.0, '2': 26.9, '3': 21.0, '4': 12.3, '5': 5.7, '6': 3.1, '7': 2.0}, 'sources': {'zucai': {'0': 10.0, '1': 19.0, '2': 27.0, '3': 21.0, '4': 12.3, '5': 5.7, '6': 3.1, '7': 2.0}}, 'confidence': {'n_sources': 1, 'label': 'soft', 'max_spread': 0.0}}",
     },
     v2_factcard:
-      "{'match_key': '周二101', 'match': '法国 vs 西班牙', 'as_of_bj': '2026-07-13T16:31:32+08:00', 'teams': [" +
-      "{'team': '法国', 'lineup': None, 'has_intel': True, 'news': [" +
-      "{'title': '楚阿梅尼(后腰)7/3 拉伤内收肌、缺席 R16+QF 两场;7/11-12 已恢复全队合练、半决赛可用(首发存疑,与科内竞争)', 'age_h': 0.5, 'stale': False}, " +
-      "{'title': '姆巴佩 QF 末段轻度踝扭伤、第77分钟换下冰敷,本人称『completely fine』,已恢复训练、预计首发', 'age_h': 0.5, 'stale': False}, " +
-      "{'title': '主力中卫萨利巴(背伤)与于帕梅卡诺(脚痛+负荷管理)双双缺席 7/11 训练课,但无源称其不可用、仍预计首发', 'age_h': 0.5, 'stale': False}, " +
-      "{'title': '科内(轻微膝伤、预防性换下)与图拉姆(小腿伤愈已合练)均可用', 'age_h': 0.5, 'stale': False}, " +
-      "{'title': '半决赛无人停赛:黄牌已在四分之一决赛后清零,科内/巴尔科拉/奥利斯的累计黄风险全部解除', 'age_h': 0.5, 'stale': False}]}, " +
-      "{'team': '西班牙', 'lineup': None, 'has_intel': True, 'news': [" +
-      "{'title': '首发名单零伤号(RotoWire 7/12:『以健康之躯出战,首发无一人挂伤号』)', 'age_h': 0.5, 'stale': False}, " +
-      "{'title': '官宣轮换信号:QF 对比利时用法比安·鲁伊斯顶替此前场场首发的佩德里(本届首个重大轮换,法比安并破门)', 'age_h': 0.5, 'stale': False}, " +
-      "{'title': '尼科·威廉姆斯(内收肌伤)已在 QF 替补登场复出、半决赛可用,但多数预测 XI 仍把他放替补', 'age_h': 0.5, 'stale': False}, " +
-      "{'title': '皮诺(肩锁关节扭伤非骨折)与穆尼奥斯(小腿,本届 0 出场)均可用但仅为替补选项', 'age_h': 0.5, 'stale': False}, " +
-      "{'title': '半决赛无人停赛:黄牌已在四分之一决赛后清零,费兰·托雷斯的累计黄风险解除', 'age_h': 0.5, 'stale': False}]}], " +
+      "{'match_key': '周三102', 'match': '英格兰 vs 阿根廷', 'as_of_bj': '2026-07-14T14:06:55+08:00', 'teams': [" +
+      "{'team': '英格兰', 'lineup': None, 'has_intel': True, 'news': [" +
+      "{'title': '中后卫 Quansah 确定停赛缺阵:R16 对墨西哥直红被 FIFA 依第14条加重为 2 场禁赛,7/15 对阿根廷是第 2 场,无上诉渠道', 'age_h': 22.1, 'stale': False}, " +
+      "{'title': '⚠️信源冲突:部分聚合站(Squawka/tips.gg)称『Konsa 停赛、Quansah 顶替』是错的——停赛的是 Quansah,Konsa 可用', 'age_h': 22.1, 'stale': False}, " +
+      "{'title': 'Konsa 对挪威末段换下系腿筋抽筋(图赫尔原话确认)非拉伤,预计可用并保住后防位置', 'age_h': 22.1, 'stale': False}, " +
+      "{'title': '赖斯的肠胃炎/隔离是 QF 对挪威赛前的事,7/12 已降级 minor doubt、预计可用并首发(半场被换主因是战术非病情)', 'age_h': 22.1, 'stale': False}, " +
+      "{'title': '亨德森左腕骨折已手术、戴石膏留队(QF 已进替补名单),但半决赛出场概率极低、非首发因素;『本届报销』说法已被推翻', 'age_h': 22.1, 'stale': False}]}, " +
+      "{'team': '阿根廷', 'lineup': None, 'has_intel': True, 'news': [" +
+      "{'title': '梅西 QF 被沙卡意外撞到面部、右眼上方划伤,处理后踢满 120 分钟;健康出战半决赛并首发(仅眼部肿胀风险)', 'age_h': 22.1, 'stale': False}, " +
+      "{'title': 'Romero 与 Paredes 在 QF 加时被换下均系抽筋/疲劳非结构伤(Romero 本人原话排除),两人均可出战半决赛', 'age_h': 22.1, 'stale': False}, " +
+      "{'title': '⚠️Romero 体能是真实风险点:此前因膝伤缺阵三个多月刚复出,部分预测 XI 因此把梅迪纳顶上', 'age_h': 22.1, 'stale': False}, " +
+      "{'title': '⚠️梅迪纳伤情存疑勿写死:R32 拉伤小腿缺 R16+QF,却又被列入预测首发,无一手源确证已归队', 'age_h': 22.1, 'stale': False}, " +
+      "{'title': '半决赛无人停赛:黄牌已在四分之一决赛后清零;劳塔罗 QF 险因庆祝吃第二黄停赛,主裁未出牌、该黄已作废', 'age_h': 22.1, 'stale': False}]}], " +
       "'note': '首发源暂缺(恒 null,官方首发约赛前 1h 落地);新闻>48h 标 stale'}",
   },
 ]
