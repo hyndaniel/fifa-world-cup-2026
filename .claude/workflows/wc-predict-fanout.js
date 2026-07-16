@@ -44,31 +44,30 @@ export const meta = {
 //      两者都空才不派 agent。每次跑改这里(v2_baseline / v2_factcard 由主会话第 3a 步预计算)。
 const MATCHES = [
   {
-    match_key: '周三102',
-    home_cn: '英格兰',
-    away_cn: '阿根廷',
-    ko_et: 'ET 7/15 15:00',
-    ko_bj: '北京 7/16 03:00',
+    match_key: "周日104",
+    home_cn: "西班牙",
+    away_cn: "阿根廷",
+    ko_et: "ET 7.19 15:00",
+    ko_bj: "7.20 03:00",
     v2_baseline: {
-      had: "{'match_key': '周三102', 'market': 'had', 'baseline': {'h': 36.4, 'd': 32.7, 'a': 30.9}, 'sources': {'zucai': {'h': 37.7, 'd': 32.2, 'a': 30.1}, 'poly': {'h': 35.9, 'd': 32.9, 'a': 31.2}}, 'confidence': {'n_sources': 2, 'label': 'medium', 'max_spread': 1.8}}",
-      hhad: "{'match_key': '周三102', 'market': 'hhad', 'baseline': {'h': 15.7, 'd': 23.6, 'a': 60.7}, 'sources': {'zucai': {'h': 15.7, 'd': 23.6, 'a': 60.7}}, 'confidence': {'n_sources': 1, 'label': 'soft', 'max_spread': 0.0}, 'line': -1}",
-      ttg: "{'match_key': '周三102', 'market': 'ttg', 'baseline': {'0': 10.0, '1': 19.0, '2': 26.9, '3': 21.0, '4': 12.3, '5': 5.7, '6': 3.1, '7': 2.0}, 'sources': {'zucai': {'0': 10.0, '1': 19.0, '2': 27.0, '3': 21.0, '4': 12.3, '5': 5.7, '6': 3.1, '7': 2.0}}, 'confidence': {'n_sources': 1, 'label': 'soft', 'max_spread': 0.0}}",
+      had: "{'match_key': '周日104', 'market': 'had', 'baseline': {'h': 42.3, 'd': 31.9, 'a': 25.8}, 'sources': {'zucai': {'h': 43.9, 'd': 32.2, 'a': 23.9}, 'poly': {'h': 41.7, 'd': 31.7, 'a': 26.6}}, 'confidence': {'n_sources': 2, 'label': 'medium', 'max_spread': 2.7}}",
+      hhad: "{'match_key': '周日104', 'market': 'hhad', 'baseline': {'h': 19.3, 'd': 25.7, 'a': 55.0}, 'sources': {'zucai': {'h': 19.3, 'd': 25.7, 'a': 55.0}}, 'confidence': {'n_sources': 1, 'label': 'soft', 'max_spread': 0.0}, 'line': -1}",
+      ttg: "{'match_key': '周日104', 'market': 'ttg', 'baseline': {'0': 10.6, '1': 20.2, '2': 27.0, '3': 20.4, '4': 11.4, '5': 5.3, '6': 3.1, '7': 2.0}, 'sources': {'zucai': {'0': 10.6, '1': 20.2, '2': 27.0, '3': 20.4, '4': 11.4, '5': 5.3, '6': 3.1, '7': 2.0}}, 'confidence': {'n_sources': 1, 'label': 'soft', 'max_spread': 0.0}}",
     },
-    v2_factcard:
-      "{'match_key': '周三102', 'match': '英格兰 vs 阿根廷', 'as_of_bj': '2026-07-14T14:06:55+08:00', 'teams': [" +
-      "{'team': '英格兰', 'lineup': None, 'has_intel': True, 'news': [" +
-      "{'title': '中后卫 Quansah 确定停赛缺阵:R16 对墨西哥直红被 FIFA 依第14条加重为 2 场禁赛,7/15 对阿根廷是第 2 场,无上诉渠道', 'age_h': 22.1, 'stale': False}, " +
-      "{'title': '⚠️信源冲突:部分聚合站(Squawka/tips.gg)称『Konsa 停赛、Quansah 顶替』是错的——停赛的是 Quansah,Konsa 可用', 'age_h': 22.1, 'stale': False}, " +
-      "{'title': 'Konsa 对挪威末段换下系腿筋抽筋(图赫尔原话确认)非拉伤,预计可用并保住后防位置', 'age_h': 22.1, 'stale': False}, " +
-      "{'title': '赖斯的肠胃炎/隔离是 QF 对挪威赛前的事,7/12 已降级 minor doubt、预计可用并首发(半场被换主因是战术非病情)', 'age_h': 22.1, 'stale': False}, " +
-      "{'title': '亨德森左腕骨折已手术、戴石膏留队(QF 已进替补名单),但半决赛出场概率极低、非首发因素;『本届报销』说法已被推翻', 'age_h': 22.1, 'stale': False}]}, " +
-      "{'team': '阿根廷', 'lineup': None, 'has_intel': True, 'news': [" +
-      "{'title': '梅西 QF 被沙卡意外撞到面部、右眼上方划伤,处理后踢满 120 分钟;健康出战半决赛并首发(仅眼部肿胀风险)', 'age_h': 22.1, 'stale': False}, " +
-      "{'title': 'Romero 与 Paredes 在 QF 加时被换下均系抽筋/疲劳非结构伤(Romero 本人原话排除),两人均可出战半决赛', 'age_h': 22.1, 'stale': False}, " +
-      "{'title': '⚠️Romero 体能是真实风险点:此前因膝伤缺阵三个多月刚复出,部分预测 XI 因此把梅迪纳顶上', 'age_h': 22.1, 'stale': False}, " +
-      "{'title': '⚠️梅迪纳伤情存疑勿写死:R32 拉伤小腿缺 R16+QF,却又被列入预测首发,无一手源确证已归队', 'age_h': 22.1, 'stale': False}, " +
-      "{'title': '半决赛无人停赛:黄牌已在四分之一决赛后清零;劳塔罗 QF 险因庆祝吃第二黄停赛,主裁未出牌、该黄已作废', 'age_h': 22.1, 'stale': False}]}], " +
-      "'note': '首发源暂缺(恒 null,官方首发约赛前 1h 落地);新闻>48h 标 stale'}",
+    v2_factcard: "{'match_key': '周日104', 'match': '西班牙 vs 阿根廷', 'as_of_bj': '2026-07-16T17:21:19+08:00', 'teams': [{'team': '西班牙', 'lineup': None, 'has_intel': True, 'news': [{'title': '决赛无停赛球员:单黄累计已在QF后清零,半决赛对法国无人吃直红/同场两黄,全员可选(报道口径 clean bill of health)', 'url': 'https://sports.yahoo.com/articles/players-miss-final-booked-semi-130000340.html', 'age_h': 0.0, 'stale': False}, {'title': \"⚠️亚马尔出勤存疑勿写死:半决赛对法国多次被拍到跛行,德拉富恩特赛后原话『Lamine doesn't have anything that I know of. I've spoken with the doctors now.』(原话确证);但『亚马尔 fully available』的转述已被2/3证伪,截至T-3d无一手复训确证\", 'url': 'https://www.goal.com/en-us/lists/luis-de-la-fuente-delivers-updates-on-lamine-yamal-pedro-porro-double-injury-scare-spain-world-cup-semi-final-victory-vs-france/blt4e2ceb572c2d5231', 'age_h': 0.0, 'stale': False}]}, {'team': '阿根廷', 'lineup': None, 'has_intel': True, 'news': [{'title': '决赛无停赛球员:单黄累计已在QF后清零,半决赛对英格兰无人吃直红/同场两黄;报道口径『斯卡洛尼进入决赛无伤病无停赛』,全员可选', 'url': 'https://sports.yahoo.com/articles/players-miss-final-booked-semi-130000340.html', 'age_h': 0.0, 'stale': False}, {'title': '🔴纪律待裁决(唯一活口):7/15胜英格兰后阿根廷球员在场内展示『Las Malvinas son Argentinas』政治横幅,利桑德罗·马丁内斯/洛塞尔索/奥塔门迪在列(有报道称横幅系看台抛入后被球员捡起)。事件已发生确证,但FIFA是否追加处罚/影响决赛出勤截至T-3d未定,勿当已发生的停赛计', 'url': 'https://www.espn.com/soccer/story/_/id/49368040/', 'age_h': 0.0, 'stale': False}]}], 'note': '首发源暂缺(恒 null);新闻>48h、pubDate 不可解析、或时间为未来(负龄)标 stale;仅 watchlist 覆盖队有情报'}",
+  },
+  {
+    match_key: "周六103",
+    home_cn: "法国",
+    away_cn: "英格兰",
+    ko_et: "ET 7.18 17:00",
+    ko_bj: "7.19 05:00",
+    v2_baseline: {
+      had: "{'match_key': '周六103', 'market': 'had', 'baseline': {'h': 50.0, 'd': 24.8, 'a': 25.2}, 'sources': {'zucai': {'h': 51.5, 'd': 23.6, 'a': 24.9}, 'poly': {'h': 49.3, 'd': 25.4, 'a': 25.4}}, 'confidence': {'n_sources': 2, 'label': 'medium', 'max_spread': 2.2}}",
+      hhad: "{'match_key': '周六103', 'market': 'hhad', 'baseline': {'h': 28.7, 'd': 23.9, 'a': 47.4}, 'sources': {'zucai': {'h': 28.7, 'd': 23.9, 'a': 47.3}}, 'confidence': {'n_sources': 1, 'label': 'soft', 'max_spread': 0.0}, 'line': -1}",
+      ttg: "{'match_key': '周六103', 'market': 'ttg', 'baseline': {'0': 3.6, '1': 10.6, '2': 17.3, '3': 23.1, '4': 19.0, '5': 12.3, '6': 8.0, '7': 6.1}, 'sources': {'zucai': {'0': 3.6, '1': 10.6, '2': 17.3, '3': 23.1, '4': 19.0, '5': 12.3, '6': 8.0, '7': 6.1}}, 'confidence': {'n_sources': 1, 'label': 'soft', 'max_spread': 0.0}}",
+    },
+    v2_factcard: "{'match_key': '周六103', 'match': '法国 vs 英格兰', 'as_of_bj': '2026-07-16T17:21:19+08:00', 'teams': [{'team': '法国', 'lineup': None, 'has_intel': True, 'news': [{'title': '🔴萨利巴(William Saliba)半决赛0-2负西班牙约第30分钟因背伤被迫下场:无对抗接触、自行倒地捂住下背部,被拉克鲁瓦(Maxence Lacroix)换下,离场时落泪。季军赛出勤存疑,截至T-2d无复训确证', 'url': 'https://www.espn.com/soccer/report/_/gameId/760514', 'age_h': 0.0, 'stale': False}]}, {'team': '英格兰', 'lineup': None, 'has_intel': True, 'news': [{'title': '✅Quansah(Jarell Quansah)2场红牌禁赛已服满、季军赛解禁可用:R16对墨西哥第54分钟鞋钉朝上蹬踏Gallardo经VAR直红,FIFA判2场(严重犯规)并驳回英足总上诉,两场分别在QF对挪威、SF对阿根廷服完。⚠️『禁赛仅在进决赛才结束、不适用季军赛』的说法已被3/3证伪(系对早期报道措辞的误读,计量单位是2场比赛而非进决赛)', 'url': 'https://www.espn.com/soccer/story/_/id/49333016/', 'age_h': 0.0, 'stale': False}, {'title': '🔴纪律待裁决:贝林厄姆(Jude Bellingham)在SF2终场哨后掌掴阿根廷替补Barco后脑并引发小规模冲突(起因为Barco冲入场内在英格兰球员面前庆祝),电视转播捕捉、多家主流媒体报道=已发生确证;但FIFA是否追加处罚/是否影响季军赛出勤截至T-2d未定,勿当已发生的停赛计', 'url': 'https://www.espn.com/soccer/report/_/gameId/760515', 'age_h': 0.0, 'stale': False}]}], 'note': '首发源暂缺(恒 null);新闻>48h、pubDate 不可解析、或时间为未来(负龄)标 stale;仅 watchlist 覆盖队有情报'}",
   },
 ]
 // ⬆⬆⬆ 每次跑只改这里 ⬆⬆⬆
